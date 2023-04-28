@@ -12,42 +12,65 @@ import math
 
 
 class Individual(Agent):
-    def __init__(self, idx, radius, budget, group=None, group_num=2, max_accel, dist_action=False):
+    def __init__(self, idx, budget, pay_low, pay_upper, base_price, n_skills, group, n_agent_recruiters, n_agent_freelancers):
         '''
         idx: index of the agent
-        radius: radius of the agent 
         group: group of the agent (recruiters or freelancers)
         group_num: number of agents in the group (recruiters or freelancers)
-
-        # we may not need these
-        max_accel: maximum acceleration of the agent
-        dist_action: whether the action is discrete or continuous
         '''
         self._idx = idx
-        self._radius = radius
-        self._budget = budget # budget of the agent (only recruiters have budget) set to None for freelancers
-        
-        self._max_accel = max_accel
-        self.dist_action = dist_action
-
-        # agent's position
-        self._position = None
-
-        # agent's velocity (We don't need this)
-        # self._velocity = None
-
+        # recruiter specific properties
+        self._budget = budget # budget of the agent
+        self._base_price = base_price # base price of the agent
+        # freelancer specific properties
+        self._n_skills = n_skills # num of skills
+        self._pay_low = pay_low # lower bound of the payrange
+        self._pay_upper = pay_upper # higher bound of the payrange
         # claim the agent to be in a group (recruiters or freelancers)
         self._group = group
-
-        # set the agent to be visible
-        self._visible = True
-        
+        # set edges to be None
+        self._edges = None
+        if group == 'recruiters':
+            self._edges = np.zeros(n_agent_freelancers)
+        elif group == 'freelancers':
+            self._edges = np.zeros(n_agent_recruiters)
+        else:
+            raise ValueError("Invalid group")
+    
     @property
     def budget(self):
         if self._budget is None and self._group == 'recruiters':
             raise ValueError("Budget is not set")
         else:
             return self._budget
+        
+    @property
+    def base_price(self):
+        if self._base_price is None and self._group == 'recruiters':
+            raise ValueError("Base price is not set")
+        else:
+            return self._base_price
+        
+    @property
+    def n_skills(self):
+        if self._n_skills is None and self._group == 'freelancers':
+            raise ValueError("Number of skills is not set")
+        else:
+            return self._n_skills
+        
+    @property
+    def pay_low(self):
+        if self._pay_low is None and self._group == 'freelancers':
+            raise ValueError("Pay low is not set")
+        else:
+            return self._pay_low
+        
+    @property
+    def pay_upper(self):
+        if self._pay_upper is None and self._group == 'freelancers':
+            raise ValueError("Pay upper is not set")
+        else:
+            return self._pay_upper
 
     @property
     def observation_space(self):
@@ -59,75 +82,33 @@ class Individual(Agent):
     # TODO: define the action space for the agent
         pass
 
-    @property
-    def position(self):
-        assert self._position is not None
-        return self._position
-    
-    @property
-    def visible(self):
-        return self._visible
-
-    # hide the agent if it is needed
-    def hide(self):
-        self._visible = False
-    
-    # reveal the agent if it is needed
-    def reveal(self):
-        self._visible = True
-
-    # set the position of the agent
-    def set_position(self, pos):
-        assert pos.shape == (2,)
-        self._position = pos
-
 
 class Jobmatching():
     """A Bipartite Networked Multi-agent Environment."""
 
-    def __init__(self, n_agents_recruiters = 2, n_agents_freelancers = 2, radius = 0.015, budget, match_reward, 
-                 use_groudtruth=False, local_ratio, recruiters_max_accel, freelancers_max_accel, step_count, window_size=2, **kwargs):
+    def __init__(self, budget, match_reward, 
+                 use_groudtruth=False, local_ratio, recruiters_max_accel, freelancers_max_accel, step_count, window_size=2, n_agents_recruiters = 2, n_agents_freelancers = 2, **kwargs):
         '''
         n_agents_recruiters: Number of agents in group A (recruiters)
         n_agents_freelancers: Number of agents in group B (freelancers)
-        radius: agent base radius. recruiters: radius, freelancers: radius
         match_reward: reward for matching
         use_groudtruth: whether to use groundtruth for matching
-        local_ratio: Proportion of reward allocated locally vs distributed globally among all agents (We may not need this)
-        recruiters_max_accel: recruiters maximum acceleration (maximum action size)
         max_cycles: After max_cycles steps all agents will return done
         '''
         self.n_agents_recruiters = n_agents_recruiters
         self.n_agents_freelancers = n_agents_freelancers
-        self.radius = radius
         self.budget = budget # need to specify the exact budget for recruiters
         self.match_reward = match_reward # need to specify the exact reward for matching
         self.use_groudtruth = use_groudtruth
-        self.recruiters_max_accel = recruiters_max_accel
-        self.freelancers_max_accel = freelancers_max_accel
         self.seed()
         self._recruiters = [
-            Individual(recruiters_idx + 1, self.radius, budget = self.budget[recruiters_idx], group='recruiters',
-                   group_num=self.n_agents_recruiters, max_accel = self.recruiters_max_accel , dist_action=self.dist_action)
+            Individual(recruiters_idx + 1, budget = self.budget[recruiters_idx], group='recruiters',)
             for recruiters_idx in range(self.n_agents_recruiters)
         ]
 
         self._freelancers = [
-            Individual(freelancers_idx + 1, self.radius, budget = None, group='freelancers',
-                   group_num=self.n_agents_freelancers, max_accel = self.freelancers_max_accel , dist_action=self.dist_action)
+            Individual(freelancers_idx + 1, budget = None, group='freelancers',)
             for freelancers_idx in range(self.n_agents_freelancers)
-        ]
-       
-        # TODO: specify the colors for recruiters and freelancers 
-        # I am not sure if this is the right way to do it
-        # just copied from the original code 
-        self.colors = [
-            (192, 64, 64),
-            (64, 192, 64),
-            (64, 64, 192),
-            (192, 192, 64),
-            (192, 64, 192),
-            (64, 192, 192),
         ]
 
         self.action_space_recruiters = [agent.action_space for agent in self._recruiters]
@@ -138,16 +119,8 @@ class Jobmatching():
             agent.observation_space for agent in self._freelancers]
         print("observation space recruiters", self.observation_space_recruiters)
         print("observation space freelancers", self.observation_space_freelancers)
-
-        # some parameters to render the window?
-        self.renderOn = False
-        self.pixel_scale = 30 * 25
-        self.window_size = window_size
-
-        self.cycle_time = 1.0
-        self.frames = 0
+        self.max_cycles = max_cycles
         self.step_count = 0
-
         self.reset()
 
     # close the game window

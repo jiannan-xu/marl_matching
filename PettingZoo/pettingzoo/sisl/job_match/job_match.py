@@ -19,7 +19,7 @@ parallel_env = parallel_wrapper_fn(env)
 
 class raw_env(AECEnv):
 
-    metadata = {'render.modes': ['human', "rgb_array"], 'name': 'job_match_v0'}
+    # metadata = {'render.modes': ['human', "rgb_array"], 'name': 'job_match_v0'}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
