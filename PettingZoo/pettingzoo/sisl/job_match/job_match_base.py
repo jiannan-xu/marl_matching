@@ -28,8 +28,29 @@ class Individual(Agent):
         self._pay_upper = pay_upper # higher bound of the payrange
         # claim the agent to be in a group (recruiters or freelancers)
         self._group = group
+        # claim the number of agents in the group (recruiters or freelancers)
+        self.n_agent_recruiters = n_agent_recruiters
+        self.n_agent_freelancers = n_agent_freelancers
+
         # set edges to be None
         self._edges = None
+        
+        # recruiter specific actions
+        # set post price to be None
+        self._price_post =  None
+        # set updated price to be None
+        self._price_post_update = None
+        # set offer decision to be None
+        self._offer_decision = None
+
+        # freelancer specific actions
+        # set application decision to be None
+        self._submit_app = None
+        # set bid price to be None
+        self._price_bid = None
+        # set offer decision to be None
+        self._accept_offer = None
+
         if group == 'recruiters':
             self._edges = np.zeros(n_agent_freelancers)
         elif group == 'freelancers':
@@ -74,20 +95,49 @@ class Individual(Agent):
 
     @property
     def observation_space(self):
-    # TODO: define the observation space for the agent
-        pass
+        # let the observation space be the edges of the bipartite graph?
+        if self.group == 'recruiters':
+            return self._edges
+        elif self.group == 'freelancers':
+            return self._edges
+        else:
+            raise ValueError("Invalid observation space")
     
     @property
     def action_space(self):
-    # TODO: define the action space for the agent
-        pass
+        if self.group == 'recruiters':
+            # 1. set base price
+            # Do we need to make the base price an action for recruiters?
+            self._price_post  = spaces.Box(low=0, high=self._budget, shape=(1,))
+
+            # 2. screen applications
+            self._offer_decision = spaces.Discrete(2) # 0: reject, 1: accept
+
+            # 3. update base price
+            self._price_post_update = spaces.Box(low=0, high=self._budget, shape=(1,))
+
+            return self._price_post, self._offer_decision, self._price_post_update
+        
+        elif self.group == 'freelancers':
+            # submit application or not
+            self._submit_app = spaces.Discrete(2) # 0: not submit, 1: submit
+
+            # bid price
+            self._price_bid = spaces.Box(low=self._pay_low, high=self._pay_upper, shape=(1,))
+
+            # accept the offer or not
+            self._accept_offer = spaces.Discrete(2) # 0: not accept, 1: accept
+
+            return self._submit_app, self._price_bid, self._accept_offer
+        else:
+            raise ValueError("Invalid action space")
 
 
 class Jobmatching():
     """A Bipartite Networked Multi-agent Environment."""
 
-    def __init__(self, budget, match_reward, 
-                 use_groudtruth=False, local_ratio, recruiters_max_accel, freelancers_max_accel, step_count, window_size=2, n_agents_recruiters = 2, n_agents_freelancers = 2, **kwargs):
+    def __init__(self, budget, match_reward,max_cycles, 
+                 use_groudtruth=False, n_agents_recruiters = 2, n_agents_freelancers = 2, local_ratio = 1, **kwargs):
         '''
         n_agents_recruiters: Number of agents in group A (recruiters)
         n_agents_freelancers: Number of agents in group B (freelancers)
@@ -100,6 +150,7 @@ class Jobmatching():
         self.budget = budget # need to specify the exact budget for recruiters
         self.match_reward = match_reward # need to specify the exact reward for matching
         self.use_groudtruth = use_groudtruth
+        self.local_ratio = local_ratio
         self.seed()
         self._recruiters = [
             Individual(recruiters_idx + 1, budget = self.budget[recruiters_idx], group='recruiters',)
@@ -145,161 +196,92 @@ class Jobmatching():
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    # generate coordinates for recruiters and freelancers
-    # TODO: need to make sure that the coordinates are not overlapping with each other 
-    # TODO: make sure recruiters are on the left side and freelancers are on the right side
-    def _generate_coord(self, radius):
-        coord = self.np_random.rand(2)
-        # # Create random coordinate that avoids obstacles
-        # while ssd.cdist(coord[None, :], self.obstacle_coords) <= radius * 2 + self.obstacle_radius:
-        #     coord = self.np_random.rand(2)
-        return coord
-    
-    # TODO: Pending editing
-    # remove the obstacles from the original code because we don't need them
+
     def reset(self):
-        self.frames = 0
+        # self.frames = 0
 
-        # Initialize recruiters and freelancers
-        for recruiter in self._recruiters:
-            recruiter.set_position(self._generate_coord(recruiter._radius))
+        # # Initialize recruiters and freelancers
+        # for recruiter in self._recruiters:
+        #     recruiter.set_position(self._generate_coord(recruiter._radius))
 
-        for freelancer in self._freelancers:
-            freelancer.set_position(self._generate_coord(freelancer._radius))
+        # for freelancer in self._freelancers:
+        #     freelancer.set_position(self._generate_coord(freelancer._radius))
         
-        # initialize the rewards for recruiters and freelancers
-        rewards = np.zeros(self.n_agents_recruiters + self.n_agents_freelancers)
+        # initialize the observation for recruiters and freelancers
+        obslist_recruiters,obslist_freelancers = self.observe_list(self)
 
-        # TODO: adapt the following four lines from the original code
-        sensor_features, collided_pursuer_evader, collided_pursuer_poison, rewards \
-            = self.collision_handling_subroutine(rewards, True)
-        obs_list = self.observe_list(
-            sensor_features, collided_pursuer_evader, collided_pursuer_poison)
-
-        
+        # combine the observation for recruiters and freelancers
+        obs_list = obslist_recruiters + obslist_freelancers
         self.last_rewards = [np.float64(0) for _ in range(self.n_agents_recruiters + self.n_agents_freelancers)]
         self.control_rewards = [0 for _ in range(self.n_agents_recruiters + self.n_agents_freelancers)]
         self.last_dones = [False for _ in range(self.n_agents_recruiters + self.n_agents_freelancers)]
         self.last_obs = obs_list
         return obs_list[0]
 
-    # TODO: Pending editing
-    def observe_list(self, sensor_feature, is_colliding_evader, is_colliding_poison):
-        obslist = []
-        for pursuer_idx in range(self.n_pursuers):
-            one_hot = np.zeros(self.n_pursuers)
-            one_hot[pursuer_idx] = 1.0
-            position = self._pursuers[pursuer_idx].position
-            obslist.append(
+    def observe_list(self):
+        obslist_recruiters = []
+        obslist_freelancers = []
+        for agent_idx in range(self.n_agent_recruiters):
+            one_hot_recruiters = np.zeros(self.n_agent_recruiters)
+            one_hot_recruiters[agent_idx] = 1.0
+            base_price = self._recruiters[agent_idx].base_price
+            budget = self._recruiters[agent_idx].budget
+            obslist_recruiters.append(
                 np.concatenate([
-                    sensor_feature[pursuer_idx, ...].ravel(), [
-                        float((is_colliding_evader[pursuer_idx, :]).sum() > 0), float((
-                            is_colliding_poison[pursuer_idx, :]).sum() > 0)
-                    ], one_hot, position
+                one_hot_recruiters, base_price, budget
                 ]))
-        return obslist  
+        for agent_idx in range(self.n_agent_freelancers):
+            one_hot_freelancers = np.zeros(self.n_agent_freelancers)
+            one_hot_freelancers[agent_idx] = 1.0
+            n_skills = self._freelancers[agent_idx].n_skills
+            obslist_freelancers.append(one_hot_freelancers, n_skills)
+        return obslist_recruiters, obslist_freelancers
 
-    # TODO: Pending editing
+    # # TODO: Pending editing
     def convert_action(self, action):
         '''convert a discrete action to continuous acceleration'''
         action_map = np.array([[0,0], [1, 0], [0, 1], [-1, 0], [0, -1],
                             [0.5, 0.5], [0.5, -0.5], [-0.5, 0.5],[-0.5, -0.5]])
         return action_map[action] * 0.05 # *self.pursuer_max_accel*0.5
 
-    # TODO: Pending editing
-    def step(self, action, agent_id, is_last):
+    def step(self, action, agent_id, group, is_last):
         if self.dist_action:
             action = self.convert_action(action)
         else:
             action = np.asarray(action)
-            action = action.reshape(2)
-            speed = np.linalg.norm(action)
-            if speed > self.pursuer_max_accel:
-                # Limit added thrust to self.pursuer_max_accel
-                action = action / speed * self.pursuer_max_accel
-
-        p = self._pursuers[agent_id]
-        if self.dist_action:
-            p.set_velocity(action) # if the action is the velocity instead of acceleration
-        else:
-            p.set_velocity(p.velocity + action)
+            # action = action.reshape(2) # reshape the action to be a 2D array
+        if group == 'recruiters':
+            r = self._recruiters[agent_id]
+        if group == 'freelancers':
+            f = self._freelancers[agent_id]
         
-        p.set_position(p.position + self.cycle_time * p.velocity)
-
-        # Penalize large thrusts
-        accel_penalty = self.thrust_penalty * math.sqrt((action ** 2).sum())
-        # Average thrust penalty among all agents, and assign each agent global portion designated by (1 - local_ratio)
-        self.control_rewards = (accel_penalty / self.n_pursuers) * np.ones(self.n_pursuers) * (1 - self.local_ratio)
-        # Assign the current agent the local portion designated by local_ratio
-        self.control_rewards[agent_id] += accel_penalty * self.local_ratio
+        # TODO: Pending editing (Define control rewards)
+    #    # Average thrust penalty among all agents, and assign each agent global portion designated by (1 - local_ratio)
+    #     self.control_rewards = (accel_penalty / self.n_pursuers) * np.ones(self.n_pursuers) * (1 - self.local_ratio)
+    #     # Assign the current agent the local portion designated by local_ratio
+    #     self.control_rewards[agent_id] += accel_penalty * self.local_ratio
 
         if is_last:
-            def move_objects(objects):
-                for obj in objects:
-                    # Move objects
-                    obj.set_position(obj.position + self.cycle_time * obj.velocity)
-                    # Bounce object if it hits a wall
-                    for i in range(len(obj.position)):
-                        if obj.position[i] >= 1 or obj.position[i] <= 0:
-                            obj.position[i] = np.clip(obj.position[i], 0, 1)
-                            obj.velocity[i] = -1 * obj.velocity[i]
-
-            move_objects(self._evaders)
-            move_objects(self._poisons)
-
             rewards = np.zeros(self.n_pursuers)
-            sensorfeatures, collisions_pursuer_evader, collisions_pursuer_poison, rewards = self.collision_handling_subroutine(rewards, is_last)
-            obs_list = self.observe_list(
-                sensorfeatures, collisions_pursuer_evader, collisions_pursuer_poison)
+            obs_list = self.observe_list(self)
             self.last_obs = obs_list
 
-            # new reward: negative if there are foods that have not been eaten
-            for g in range(self.n_groups):
-                visibles = [e.visible for e in self._evaders[g*self.n_evaders_pergroup:(g+1)*self.n_evaders_pergroup]]
-                rewards[g] -= np.array(visibles).sum() * self.food_alive_penalty
+            # TODO: Update the reward function
+            # # new reward: 
+            # for g in range(self.n_groups):
+            #     visibles = [e.visible for e in self._evaders[g*self.n_evaders_pergroup:(g+1)*self.n_evaders_pergroup]]
+            #     rewards[g] -= np.array(visibles).sum() * self.food_alive_penalty
 
-            local_reward = rewards
-            global_reward = local_reward.mean()
+            self.local_reward = rewards
+            self.global_reward = self.local_reward.mean()
             # Distribute local and global rewards according to local_ratio
-            self.last_rewards = local_reward * self.local_ratio + global_reward * (1 - self.local_ratio)
-
-            self.frames += 1
-
-        if self.comm:
-            return self.observe(agent_id), self.communicate(agent_id)
-        else:
-            return self.observe(agent_id)
+            self.last_rewards = self.local_reward * self.local_ratio + self.global_reward * (1 - self.local_ratio)
+        return self.observe(agent_id)
 
     def observe(self, agent):
         return np.array(self.last_obs[agent], dtype=np.float32)
 
-    def communicate(self, agent):
-        return np.array(self.last_comm[agent], dtype=np.float32)    
-
-
-    # The following functions are for rendering the environment in pygame
-    def draw_background(self):
-        # -1 is building pixel flag
-        color = (255, 255, 255)
-        rect = pygame.Rect(0, 0, self.window_size * self.pixel_scale, self.window_size * self.pixel_scale)
-        pygame.draw.rect(self.screen, color, rect)
-
-    def draw_recruiters(self):
-        for recruiter in self._recruiters:
-            x, y = recruiter.position
-            center = (int(self.window_size * self.pixel_scale * x),
-                      int(self.window_size * self.pixel_scale * y))
-            color = self.colors[recruiter._group%len(self.colors)]
-            pygame.draw.circle(self.screen, color, center, self.pixel_scale * self.radius)
-
-    def draw_freelancers(self):
-        for freelancer in self._freelancers:
-            x, y = freelancer.position
-            center = (int(self.window_size * self.pixel_scale * x),
-                      int(self.window_size * self.pixel_scale * y))
-            color = self.colors[freelancer._group%len(self.colors)]
-            pygame.draw.circle(self.screen, color, center, self.pixel_scale * self.radius)
-
+    #TODO: Pending editing
     def render(self, mode="human"):
         if not self.renderOn:
             if mode == "human":
@@ -309,10 +291,6 @@ class Jobmatching():
             else:
                 self.screen = pygame.Surface((self.window_size*self.pixel_scale, self.window_size*self.pixel_scale))
             self.renderOn = True
-
-        self.draw_background()
-        self.draw_recruiters()
-        self.draw_freelancers()
 
         observation = pygame.surfarray.pixels3d(self.screen)
         new_observation = np.copy(observation)
