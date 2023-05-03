@@ -4,7 +4,7 @@ from torch import poisson
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = 'hide'
 import numpy as np
 import scipy.spatial.distance as ssd
-from gym import spaces
+from gym import spaces,MultiBinary
 from gym.utils import seeding
 from .._utils import Agent
 import pygame
@@ -97,9 +97,9 @@ class Individual(Agent):
     def observation_space(self):
         # let the observation space be the edges of the bipartite graph?
         if self.group == 'recruiters':
-            return self._edges
+            return MultiBinary(self.n_agent_freelancers)
         elif self.group == 'freelancers':
-            return self._edges
+            return MultiBinary(self.n_agent_recruiters)
         else:
             raise ValueError("Invalid observation space")
     
