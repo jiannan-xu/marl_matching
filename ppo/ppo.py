@@ -201,10 +201,9 @@ def make_jobmatch_env(comm, **kwargs):
         env = job_match_v0.parallel_env(**kwargs)
     env.reset()
 
-    env.reset()
     agent = env.agents[0]
-    observation_space = env.observation_spaces[agent]
-    action_space = env.action_spaces[agent]
+    # observation_space = env.observation_spaces[agent]
+    # action_space = env.action_spaces[agent]
     
     adv_agents = []
     freelancers = ["freelancer_{}".format(i) for i in range(kwargs["n_freelancers"])]
