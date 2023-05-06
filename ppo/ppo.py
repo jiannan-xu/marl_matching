@@ -14,7 +14,7 @@ from core import *
 from param import Param
 import pickle
 import concurrent.futures as futures
-from pettingzoo.sisl import foodcollector_v0, foodcollector_v1 #written by furong
+from pettingzoo.sisl import job_match_v0, job_match_v1 
 import re
 
 ### Default Policy for benign agents
@@ -189,61 +189,16 @@ class PPOBuffer:
         data = dict(obs=from_numpy(self.obs_buf), act=from_numpy(self.act_buf), ret=from_numpy(self.ret_buf),
                     adv=from_numpy(self.adv_buf), logp=self.logp_buf)
         return data
-
-def make_advcomm_env(adv_agents, good_policy_dir, victim, ac_kwargs, ablate_kwargs, 
-                     confidence_kwargs, **kwargs):
-    env_fn = foodcollector_v1.parallel_advcomm_wrapper_fn(foodcollector_v1.env, 
-        adv_agents, victim)
-    env = env_fn(**kwargs)
-
-    #print("good agents", env.good_names)
-    #print("adv agents", env.adv_names)
-    #print("victim", env.victim)
-    a = env.good_names[0]
-    good_observation_space = env.good_observation_spaces[a]
-    good_comm_space = env.good_communication_spaces[a]
-    #print("shape of good comomunication space:{}".format(good_comm_space.shape))
-    good_action_space = env.good_action_spaces[a]
-    if ablate_kwargs is None:
-        obs_dim = good_observation_space.shape[0] + good_comm_space.shape[0]
-    else:
-        k, n = ablate_kwargs['k'], ablate_kwargs['n']
-        obs_dim =  good_observation_space.shape[0] + good_comm_space.shape[0]*k//(n-1)
-    ac = MLPActorCritic(obs_dim, good_action_space, **ac_kwargs).to(Param.device)
-    if good_policy_dir:
-        state_dict, mean, std = torch.load(good_policy_dir, map_location=Param.device)
-        ac.load_state_dict(state_dict)
-        ac.moving_mean = mean
-        ac.moving_std = std
-    
-    detector_ac = None
-    if confidence_kwargs is not None:
-        k, n = 1, ablate_kwargs['n']
-        obs_dim =  good_observation_space.shape[0] + good_comm_space.shape[0]*k//(n-1)
-        detector_ac = MLPActorCritic(obs_dim, good_action_space, **ac_kwargs).to(Param.device)
-        state_dict, mean, std = torch.load(confidence_kwargs['detector_policy_dir'], map_location=Param.device)
-        detector_ac.load_state_dict(state_dict)
-        detector_ac.moving_mean = mean
-        detector_ac.moving_std = std
-    
-    default_policy = DefaultPolicy(ac, True if kwargs["victim_dist_action"] else False, 
-                                   ablate_kwargs=ablate_kwargs, confidence_kwargs=confidence_kwargs,
-                                   detector_ac=detector_ac)
-    env.set_default_policy(default_policy)
-    env.reset()
-    return env, adv_agents, []
-
-                          
-def make_food_env(comm, **kwargs):
-# def make_food_env(comm, n_pursuers, n_evaders, n_poison, n_sensors=12, 
+                 
+def make_jobmatch_env(comm, **kwargs):
+# def make_jobmatch_env(comm, n_freelancers, n_recruiters, 
 #                   max_cycles=500, convert=[], dist_action=False, 
-#                   sensor_range=0.2, evader_speed=0.005,poison_speed=0.005,
-#                   speed_features=False, use_groudtruth=False, smart_comm=False, 
+#                   use_groudtruth=False, smart_comm=False, 
 #                   comm_freq=1):
     if comm:
-        env = foodcollector_v1.parallel_env(**kwargs)
+        env = job_match_v1.parallel_env(**kwargs)
     else:
-        env = foodcollector_v0.parallel_env(**kwargs)
+        env = job_match_v0.parallel_env(**kwargs)
     env.reset()
 
     env.reset()
@@ -252,22 +207,26 @@ def make_food_env(comm, **kwargs):
     action_space = env.action_spaces[agent]
     
     adv_agents = []
-    good_agents = ["pursuer_{}".format(i) for i in range(kwargs["n_pursuers"])]
+    freelancers = ["freelancer_{}".format(i) for i in range(kwargs["n_freelancers"])]
+    recruiters = ["recruiter_{}".format(i) for i in range(kwargs["n_recruiters"])]
     #for a in all_agents:
         #if convert and a in convert:
             #adv_agents.append(a)
             #env.unwrapped.convert_agent(a)
         #else:
     #good_agents.append(a)
-    return env, good_agents, adv_agents
+    return env, freelancers, recruiters
 
 def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
         target_kl=0.01, save_freq=10, name_env="HalfCheetah-v3", epoch_smoothed=10,
         no_save=False, verbose=False, log_freq=50, exp_name='ppo', trained_dir=None, 
-        obs_normalize=False, beta=False, comm=False, dist_action=False, render=False, 
-        recurrent=False, adv_train=False, ablate_kwargs=None, count_agent='pursuer_0'):
+        obs_normalize=False, beta=False, comm=False, 
+        # dist_action=False, render=False, 
+        recurrent=False, 
+        # count_agent='pursuer_0'
+        ):
  
     # Setup logger file and reward file
     logger_file = open(os.path.join(Param.data_dir, r"logger_{}.txt".format(exp_name)), "a")
@@ -278,9 +237,13 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     np.random.seed(seed)
 
     # Instantiate environment
-    env, good_agent_name, adv_agent_name = env_fn()
-    print("good agent:{}".format(good_agent_name))
-    print("adv_agent_name:{}".format(adv_agent_name))
+    env, freelancers_name, recruiters_name = env_fn()
+    print("Freelancers:{}".format(freelancers_name))
+    print("Recruiters:{}".format(recruiters_name))
+    
+    freelancers_observation_space = env.observation_space_freelancers[freelancers_name[0]]
+    recruiters_observation_space = env.observation_space_recruiters[recruiters_name[0]]
+    freelancers_action_space
     
     observation_space = env.observation_spaces[good_agent_name[0]]
     action_space      = env.action_spaces[good_agent_name[0]]
@@ -570,57 +533,64 @@ if __name__ == '__main__':
     parser.add_argument('--no-cuda', action="store_true")
     parser.add_argument('--vf-lr', type=float, default=1e-3)
     parser.add_argument('--pi-lr', type=float, default=3e-4)
-    parser.add_argument('--cuda', type=int, default=2)
-    parser.add_argument('--env', type=str, default='FoodCollector')
+    parser.add_argument('--cuda', type=int, default=0) # default cuda:_
+    parser.add_argument('--env', type=str, default='JobMatching') # check
     parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
-    parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--gamma', type=float, default=0.99) # ppo gamma
+    parser.add_argument('--seed', '-s', type=int, default=0) 
     parser.add_argument('--steps', type=int, default=4000)
     parser.add_argument('--epoch-smoothed', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--exp-name', type=str, default='ppo')
     parser.add_argument('--log-freq', type=int, default=50)
     parser.add_argument('--obs-normalize', action="store_true")
-    parser.add_argument('--victim-no-beta', action="store_true")
+    # parser.add_argument('--victim-no-beta', action="store_true")
     parser.add_argument('--beta', action="store_true")
     parser.add_argument('--trained-dir', type=str)
-    parser.add_argument('--render', action="store_true")
-    parser.add_argument('--truth', action="store_true")
-    parser.add_argument('--smart', action="store_true")
+    parser.add_argument('--render', action="store_false")
+    # parser.add_argument('--truth', action="store_true") # inside env
+    parser.add_argument('--smart', action="store_true") # inside env
     
-    parser.add_argument('--count-agent', type=str, default='pursuer_0')
-    parser.add_argument('--window-size', type=int, default=1)
-    parser.add_argument('--n-pursuers', type=int, default=3)
-    parser.add_argument('--n-evaders', type=int, default=1)
-    parser.add_argument('--n-poison', type=int, default=1)
-    parser.add_argument('--poison-scale', type=float, default=0.75)
-    parser.add_argument('--n-sensors',  type=int, default=6)
+    # parser.add_argument('--count-agent', type=str, default='pursuer_0') # check
+    # parser.add_argument('--window-size', type=int, default=1) # inside env
+    # parser.add_argument('--n-pursuers', type=int, default=3)
+    # parser.add_argument('--n-evaders', type=int, default=1)
+    parser.add_argument('--n-freelancers', type=int, default=3)
+    parser.add_argument('--n-recruiters', type=int, default=3)
+    # parser.add_argument('--n-poison', type=int, default=1)
+    # parser.add_argument('--poison-scale', type=float, default=0.75)
+    # parser.add_argument('--n-sensors',  type=int, default=6)
     parser.add_argument('--max-cycle', type=int, default=200)
-    parser.add_argument('--comm', action="store_true")
-    parser.add_argument('--comm-freq',  type=int, default=1)
-    parser.add_argument('--dist-action', action="store_true")
-    parser.add_argument('--victim-dist-action', action="store_true")
-    parser.add_argument('--sensor-range',  type=float, default=0.2)
-    parser.add_argument('--evader-speed', type=float, default=0)
-    parser.add_argument('--poison-speed', type=float, default=0)
-    parser.add_argument('--speed-features', action="store_true")
+    parser.add_argument('--comm', action="store_true") # whether comm
+    parser.add_argument('--comm-freq',  type=int, default=1) # comm frequency
+    
+    # we don't need to specify the comm_dim, it is automatically determined by the env
+    # parser.add_argument('--dist-action', action="store_true")
+    # parser.add_argument('--victim-dist-action', action="store_true")
+    
+    # parser.add_argument('--sensor-range',  type=float, default=0.2)
+    # parser.add_argument('--evader-speed', type=float, default=0)
+    # parser.add_argument('--poison-speed', type=float, default=0)
+    # parser.add_argument('--speed-features', action="store_true")
     parser.add_argument('--recurrent', action="store_true")
-    parser.add_argument('--food-revive', action="store_true", help="whether the food can be refreshed after being eaten")
+    # parser.add_argument('--food-revive', action="store_true", help="whether the food can be refreshed after being eaten")
     
-    parser.add_argument('--convert-adv', type=str, nargs='+')
-    parser.add_argument('--good-policy', type=str)
-    parser.add_argument('--victim', type=str, default="pursuer_0")
+    # parser.add_argument('--convert-adv', type=str, nargs='+')
+    # parser.add_argument('--good-policy', type=str)
+    # parser.add_argument('--victim', type=str, default="pursuer_0")
     
-    parser.add_argument('--ablate', action='store_true')
-    parser.add_argument('--ablate-k', type=int, default=1)
-    parser.add_argument('--ablate-median', type=int, default=1)
+    # parser.add_argument('--ablate', action='store_true')
+    # parser.add_argument('--ablate-k', type=int, default=1)
+    # parser.add_argument('--ablate-median', type=int, default=1)
     
-    parser.add_argument('--detector-policy-dir', type=str, default=None)
+    # parser.add_argument('--detector-policy-dir', type=str, default=None)
     
     args = parser.parse_args()
     gym.logger.set_level(40)
     
+    # no need to ablate, no detector
+    """
     if args.ablate:
         ablate_kwargs={"k":args.ablate_k, "n":args.n_pursuers, 
                        "adv_train": True if args.convert_adv else False, 
@@ -634,6 +604,7 @@ if __name__ == '__main__':
                              'detector_policy_dir':args.detector_policy_dir} 
     else:
         confidence_kwargs = None
+    """
     
     if args.no_cuda:
         Param(torch.FloatTensor, torch.device("cpu"))
@@ -641,34 +612,17 @@ if __name__ == '__main__':
         Param(torch.cuda.FloatTensor, torch.device("cuda:{}".format(args.cuda)))
     
     ### Please make sure the following argument names are the same as the FoodCollector's init function
-    if args.convert_adv:
-        env = make_advcomm_env(adv_agents=args.convert_adv, good_policy_dir=args.good_policy, victim=args.victim,
-                ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, beta=not args.victim_no_beta, 
-                            recurrent=args.recurrent, ep_len=args.max_cycle),
-                ablate_kwargs = ablate_kwargs, confidence_kwargs = confidence_kwargs,
-                window_size=args.window_size, poison_scale=args.poison_scale,  food_revive=args.food_revive,
-                max_cycles=args.max_cycle, n_pursuers=args.n_pursuers, n_evaders=args.n_evaders, 
-                n_poison=args.n_poison, n_sensors=args.n_sensors, dist_action=args.victim_dist_action,
-                sensor_range=args.sensor_range, evader_speed=args.evader_speed, poison_speed=args.poison_speed,
-                speed_features=args.speed_features, use_groudtruth=args.truth, smart_comm=args.smart, 
-                comm_freq=args.comm_freq, victim_dist_action=args.victim_dist_action)
-    else:
-        env = make_food_env(
-                comm=args.comm, max_cycles=args.max_cycle,
-                window_size=args.window_size, poison_scale=args.poison_scale, food_revive=args.food_revive,
-                n_pursuers=args.n_pursuers, n_evaders=args.n_evaders, 
-                n_poison=args.n_poison, n_sensors=args.n_sensors, dist_action=args.dist_action,
-                sensor_range=args.sensor_range, evader_speed=args.evader_speed, poison_speed=args.poison_speed,
-                speed_features=args.speed_features, use_groudtruth=args.truth, 
-                smart_comm=args.smart, comm_freq=args.comm_freq)
+    env = make_jobmatch_env(
+        comm=args.comm, max_cycles=args.max_cycle,
+        window_size=args.window_size, 
+        n_freelancers=args.n_freelancers, n_recruiters=args.n_recruiters, 
+        # dist_action=args.dist_action,
+        # use_groudtruth=args.truth, 
+        smart_comm=args.smart, comm_freq=args.comm_freq)
     
     logger_file = open(os.path.join(Param.data_dir, r"logger_{}.txt".format(args.exp_name)), "wt")
-    logger_file.write("Number of Pursuers: {}  Number of Food:{}  Number of Poison:{}\n".\
-                      format(args.n_pursuers, args.n_evaders, args.n_poison))
-    logger_file.write("Number of Sensors: {}  Sensor Range:{}    Speed Features:{}\n".\
-                      format(args.n_sensors, args.sensor_range, args.speed_features))
-    logger_file.write("Food Speed: {}  Poison Speed:{}\n".\
-                      format(args.evader_speed, args.poison_speed))
+    logger_file.write("Number of Freelancers: {}  Number of Recruiters:{}\n".\
+                      format(args.n_freelancers, args.n_recruiters))
     logger_file.close()
         
     
@@ -680,6 +634,10 @@ if __name__ == '__main__':
         name_env = args.env, epoch_smoothed=args.epoch_smoothed,
         no_save = args.no_save, verbose=args.verbose, log_freq = args.log_freq, 
         exp_name=args.exp_name, obs_normalize = args.obs_normalize, beta=args.beta,
-        comm=args.comm, dist_action=args.dist_action, trained_dir=args.trained_dir, 
-        render=args.render, recurrent=args.recurrent, adv_train=True if args.convert_adv else False,
-        ablate_kwargs=ablate_kwargs, count_agent=args.count_agent)
+        comm=args.comm, 
+        # dist_action=args.dist_action, 
+        trained_dir=args.trained_dir, 
+        # render=args.render, 
+        recurrent=args.recurrent, 
+        # count_agent=args.count_agent
+        )
