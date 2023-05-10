@@ -1,4 +1,10 @@
-from .job_match_base import Jobmatching as _env
+# not used
+
+'''
+from .job_match_base import Jobmatching_step1 as _env_1
+from .job_match_base import Jobmatching_step2 as _env_2
+from .job_match_base import Jobmatching_step3 as _env_3
+
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector
 from pettingzoo.utils import wrappers
@@ -13,9 +19,7 @@ def env(**kwargs):
     env = wrappers.OrderEnforcingWrapper(env)
     return env
 
-
 parallel_env = parallel_wrapper_fn(env)
-
 
 class raw_env(AECEnv):
 
@@ -24,16 +28,19 @@ class raw_env(AECEnv):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.env = _env(*args, **kwargs)
-
-        self.agents = ["recruiter_" + str(r) for r in range(self.env.n_agents_recruiters)] + \
-                        ["freelancer_" + str(c) for c in range(self.env.n_agents_freelancers)]
-        self.possible_agents = self.agents[:]
-        self.agent_name_mapping = dict(zip(self.agents, list(range(self.num_agents))))
-        self._agent_selector = agent_selector(self.agents)
+        self.recruiters = ["recruiter_" + str(r) for r in range(self.env.n_agents_recruiters)]
+        self.freelancers = ["freelancer_" + str(c) for c in range(self.env.n_agents_freelancers)]
+        self.recruiters_name_mapping = dict(zip(self.recruiters, list(range(self.env.n_agents_recruiters))))
+        self.freelancers_name_mapping = dict(zip(self.freelancers, list(range(self.env.n_agents_freelancers))))
+        self.recruiter_selector = agent_selector(self.recruiters)
+        self.freelancer_selector = agent_selector(self.freelancers)
         # spaces
-        self.action_spaces = dict(zip(self.agents, self.env.action_space))
-        self.observation_spaces = dict(
-            zip(self.agents, self.env.observation_space))
+        self.action_space_1 = dict(zip(self.freelancers, self.env.action_space_1))
+        self.action_space_2 = dict(zip(self.recruiters, self.env.action_space_2))
+        self.action_space_3 = dict(zip(self.freelancers, self.env.action_space_3))
+        self.observation_space_1 = dict(zip(self.freelancers, self.env.observation_space_1))
+        self.observation_space_2 = dict(zip(self.recruiters, self.env.observation_space_2))
+        self.observation_space_3 = dict(zip(self.freelancers, self.env.observation_space_3))
         self.has_reset = False
 
     def seed(self, seed=None):
@@ -52,13 +59,6 @@ class raw_env(AECEnv):
         self._cumulative_rewards = dict(zip(self.agents, [(0) for _ in self.agents]))
         self.dones = dict(zip(self.agents, [False for _ in self.agents]))
         self.infos = dict(zip(self.agents, [{} for _ in self.agents]))
-
-    def close(self):
-        if self.has_reset:
-            self.env.close()
-
-    def render(self, mode="human"):
-        return self.env.render(mode)
 
     def step(self, action):
         if self.dones[self.agent_selection]:
@@ -84,3 +84,4 @@ class raw_env(AECEnv):
 
     def observe(self, agent):
         return self.env.observe(self.agent_name_mapping[agent])
+'''
