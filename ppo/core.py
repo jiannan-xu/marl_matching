@@ -346,68 +346,104 @@ def concatenate(obs, comm, ablate_kwargs=None, idx_list=None):
 ## Train adversary
 ## default: benign agents -> shuffle
 
-def test_return(env, ac, num_t, max_steps, good_agent_name, dist_action, comm, 
-                recurrent=False, ablate_kwargs=None, random_ac=False):
-    action_space = env.action_spaces['pursuer_1']
-    if isinstance(action_space, Box):
-        low, high = action_space.low, action_space.high
-    else:
-        low, high = None, None
+def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len, 
+                freelancers, recruiters, recurrent=False):
+    action_space_1 = env_1.action_space
+    action_space_2 = env_2.action_space
+    action_space_3 = env_3.action_space
+    low, high = action_space_2.low, action_space_2.high
         
-    agent_rewards = [[]]*len(good_agent_name)
-    if ablate_kwargs is not None:
-        idx_list = np.array(makeCombi(ablate_kwargs['n']-1, ablate_kwargs['k']))
-    else:
-        idx_list  = None
-    for eps in range(num_t):
-        episode_rewards = np.zeros(len(good_agent_name))
+    freelancer_rewards = [[]]*len(freelancers)
+    recruiter_rewards  = [[]]*len(recruiters)
+
+    for eps in range(epochs):
+        freelancer_episode_rewards = np.zeros(len(freelancers))
+        recruiter_episode_rewards  = np.zeros(len(recruiters))
         if recurrent:
-            for agent in good_agent_name:
-                ac.initialize()
-        if comm:
-            o, c = env.reset()
-            o = concatenate(o,  c, ablate_kwargs, idx_list)
-        else:
-            o = env.reset()
+            ac_1.initialize()
+            ac_2.initialize()
+            ac_3.initialize()
+
+        o_1 = env_1.reset()
+        o_2 = env_2.reset()
+        o_3 = env_3.reset()
         done = False
-        for t in range (max_steps):
-            good_actions = {}
-            for agent in good_agent_name:
-                if not random_ac:
-                    a = ac.act(torch.from_numpy(o[agent]).to(Param.device).type(Param.dtype))
-                    if dist_action:
-                        a = torch.mode(a, axis=-1)[0]
-                    elif len(a.shape)>1 and not dist_action:
-                        a = torch.median(a, axis=0)[0]
-                    if not dist_action:
-                        a = a.cpu().numpy()
-                        a = clip(a, low, high)
-                    else:
-                        a = a.item()
-                else:
-                    a = action_space.sample()
-                good_actions[agent] = a
-            if comm:
-                next_o, c, reward, dones,_  = env.step(good_actions)
-                next_o = concatenate(next_o, c, ablate_kwargs, idx_list)
-            else:
-                next_o, reward, dones,_  = env.step(good_actions)
-            for i in range(len(good_agent_name)):
-                agent = good_agent_name[i]
-                if dones[agent]:
+        for t in range (max_ep_len):
+            good_actions_1 = {}
+            good_actions_2 = {}
+            good_actions_3 = {}
+            
+            for agent in freelancers:
+                a = ac_1.act(torch.from_numpy(o_1[agent]).to(Param.device).type(Param.dtype))
+                a = a.cpu().numpy()
+                good_actions_1[agent] = a
+            next_o1, reward_1, done_1, _ = env_1.step(good_actions_1)
+            env_2.env.update_env_1(env_1.env.output_for_update_env())
+            env_3.env.update_env_1(env_1.env.output_for_update_env())
+            
+            for agent in recruiters:
+                a = ac_2.act(torch.from_numpy(o_2[agent]).to(Param.device).type(Param.dtype))
+                a = a.cpu().numpy()
+                a = np.clip(a, low, high)
+                good_actions_2[agent] = a
+            next_o2, reward_2, done_2, _ = env_2.step(good_actions_2)
+            env_1.env.update_env_2(env_2.env.output_for_update_env())
+            env_3.env.update_env_2(env_2.env.output_for_update_env())
+            
+            for agent in freelancers:
+                a = ac_3.act(torch.from_numpy(o_3[agent]).to(Param.device).type(Param.dtype))
+                a = a.item()
+                good_actions_3[agent] = a
+                
+            next_o3, reward_3, done_3, _ = env_3.step(good_actions_3)
+            env_1.env.update_env_3(env_3.env.output_for_update_env())
+            env_2.env.update_env_3(env_3.env.output_for_update_env())
+            
+            reward_1, reward_2 = env_3.env.output_rewards()
+            for i in range(len(freelancers)):
+                agent = freelancers[i]
+                if done_1[agent] or done_3[agent]:
                     done = True
-                episode_rewards[i] += reward[agent]
-            o = next_o
+                freelancer_episode_rewards[i] += reward_3[agent]
+            for i in range(len(recruiters)):
+                agent = recruiters[i]
+                if done_2[agent]:
+                    done = True
+                recruiter_episode_rewards[i] += reward_2[agent]
+            print(good_actions_1)
+            print(good_actions_2)
+            print(good_actions_3)
+            o_1 = next_o1
+            o_2 = next_o2
+            o_3 = next_o3
             if done:
-                for i in range(len(good_agent_name)):
-                    agent_rewards[i].append(episode_rewards[i])
+                for i in range(len(freelancers)):
+                    freelancer_rewards[i].append(freelancer_episode_rewards[i])
+                for i in range(len(recruiters)):
+                    recruiter_rewards[i].append(recruiter_episode_rewards[i])
                 break
-    reward = np.array(agent_rewards[0])
-    reward = np.mean(reward.reshape(3, reward.shape[0]//3), axis=-1)
-    return np.mean(reward), np.std(reward)
+    reward_f = np.array(freelancer_rewards)
+    reward_r = np.array(recruiter_rewards)
+    return np.mean(reward_f), np.std(reward_f), np.mean(reward_r), np.std(reward_r)
 
 
-
+def get_parameters(n_freelancers, n_recruiters, exp_no):
+    if exp_no == 0:
+        # Toy example
+        assert n_freelancers == 3
+        assert n_recruiters == 3
+        budget = np.ones(3)
+        base_price = np.array([80000, 120000, 160000])
+        low_price = np.array([60000, 100000, 140000])
+        high_price = np.array([100000, 140000, 180000])
+        rate_freelancer = np.array([1, 50, 100])
+        rate_recruiter = np.array([1, 50, 100])
+        num_of_skills = np.array([1, 2, 3])
+        u_ij = np.array([[80000, 80000, 80000], [130000, 130000, 130000], [180000, 180000, 180000]])
+        v_ij = np.array([[80000, 80000, 80000], [110000, 110000, 110000], [140000, 140000, 140000]])
+    else:
+        return NotImplementedError
+    return budget, base_price, low_price, high_price, rate_freelancer, rate_recruiter, num_of_skills, u_ij, v_ij
 
 ### Calculating moving meana and standard deviation
 class MovingMeanStd:

@@ -38,51 +38,74 @@ def make_jobmatch_env(comm, **kwargs):
     return env_1, env_2, env_3, recruiters, freelancers
 
 def main(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), trained_dir=None, 
-        beta=False, comm=False, dist_action=False, render=False, 
-        recurrent=False, adv_train=False, ablate_kwargs=None, count_agent=None, 
-        max_ep_len=200, epochs=20, num_agent=9, num_adv=0, 
-        random_attacker=False, test_random = False
+        # beta=False, comm=False, dist_action=False, render=False, 
+        recurrent=False, # adv_train=False, ablate_kwargs=None, count_agent=None, 
+        max_ep_len=200, epochs=20, # num_agent=9, num_adv=0, 
+        # random_attacker=False, test_random = False
         ):
 
     
     print('-----Test Performance {} Epochs---'.format(epochs))
     
     # Instantiate environment
-    env, good_agent_name, adv_agent_name = env_fn()
-    observation_space = env.observation_spaces[good_agent_name[0]]
-    action_space      = env.action_spaces[good_agent_name[0]]
-    act_dim           = action_space.shape
-    if comm:
-        comm_space    = env.communication_spaces[good_agent_name[0]]
-        if ablate_kwargs is None or ablate_kwargs['adv_train']:
-            obs_dim       = (observation_space.shape[0]  + comm_space.shape[0],)
-        else:
-            num_agents = len(good_agent_name) + len(adv_agent_name)
-            obs_dim       = (observation_space.shape[0]  + 
-                             comm_space.shape[0]*ablate_kwargs['k']//(num_agents-1),)
-    else:
-        obs_dim = env.observation_spaces[good_agent_name[0]].shape 
-    if beta:
-        high = torch.from_numpy(action_space.high).to(Param.device).type(Param.dtype)
-        low = torch.from_numpy(action_space.low).to(Param.device).type(Param.dtype)
+    env_1, env_2, env_3, recruiters, freelancers = env_fn()
+    default_recruiter_name = recruiters[0]
+    default_freelancer_name = freelancers[0]
+    print("Freelancers:{}".format(recruiters))
+    print("Recruiters:{}".format(freelancers))
+    
+    observation_space_1 = env_1.observation_space[default_freelancer_name]
+    observation_space_2 = env_2.observation_space[default_recruiter_name]
+    observation_space_3 = env_3.observation_space[default_freelancer_name]
+    
+    action_space_1 = env_1.action_space[default_freelancer_name]
+    action_space_2 = env_2.action_space[default_recruiter_name]
+    action_space_3 = env_3.action_space[default_freelancer_name]
+    
+    act_dim_1 = action_space_1.shape    # multibinary
+    act_dim_2 = action_space_2.shape    # box
+    act_dim_3 = action_space_3.shape    # discrete
+
+    obs_dim_1 = spaces.utils.flatdim(observation_space_1)
+    obs_dim_2 = spaces.utils.flatdim(observation_space_2)
+    obs_dim_3 = spaces.utils.flatdim(observation_space_3)
+    
+    high = torch.from_numpy(action_space_2.high).to(Param.device).type(Param.dtype)
+    low = torch.from_numpy(action_space_2.low).to(Param.device).type(Param.dtype)
     #print("Obs dim:{}, Act dim:{}".format(obs_dim[0], act_dim))
     
     # Create actor-critic module
-    ac = actor_critic(obs_dim[0], action_space, **ac_kwargs).to(Param.device)
+    ac_kwargs['beta'] = False
+    ac_1 = actor_critic(obs_dim_1, action_space_1, **ac_kwargs).to(Param.device)
+    ac_kwargs['beta'] = True
+    ac_2 = actor_critic(obs_dim_2, action_space_2, **ac_kwargs).to(Param.device)
+    ac_kwargs['beta'] = False
+    ac_3 = actor_critic(obs_dim_3, action_space_3, **ac_kwargs).to(Param.device)
     if trained_dir is not None:
-        state_dict, mean, std = torch.load(trained_dir, map_location=Param.device)
-        ac.load_state_dict(state_dict)
-        ac.moving_mean = mean
-        ac.moving_std = std
+        print("loaded pretrained model from", trained_dir)
+        ac1_name = os.path.join(trained_dir, "ac_1.pt")
+        ac2_name = os.path.join(trained_dir, "ac_2.pt")
+        ac3_name = os.path.join(trained_dir, "ac_3.pt")
+        # state_dict, mean, std = torch.load(trained_dir, map_location=Param.device)
+        state_dict_1, mean_1, std_1 = torch.load(ac1_name, map_location=Param.device)
+        state_dict_2, mean_2, std_2 = torch.load(ac2_name, map_location=Param.device)
+        state_dict_3, mean_3, std_3 = torch.load(ac3_name, map_location=Param.device)
+        ac_1.load_state_dict(state_dict_1)
+        ac_1.moving_mean = mean_1
+        ac_1.moving_std = std_1
+        
+        ac_2.load_state_dict(state_dict_2)
+        ac_2.moving_mean = mean_2
+        ac_2.moving_std = std_2
+        
+        ac_3.load_state_dict(state_dict_3)
+        ac_3.moving_mean = mean_3
+        ac_3.moving_std = std_3
     
-    if random_attacker:
-        ac = RandomAttacker(action_space)
-    
-    mean, _ = test_return(env, ac, epochs, max_ep_len, good_agent_name, 
-                            dist_action, comm, recurrent, ablate_kwargs,
-                            random_ac = test_random)
-    print('-----[Number of Agents:{} Number of Adversary:{} Ablation Size:{} Median Sample Size {}] {} Epochs Performance:{}------'.\
-          format(num_agent, num_adv, ablate_kwargs['k'], ablate_kwargs['median'], epochs, mean))
+    mean, _ = test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len, freelancers, recruiters,
+                            recurrent)
+    print('-----[Number of Agents:{} Number of Adversary:{}] {} Epochs Performance:{}------'.\
+          format(len(recruiters), len(freelancers), epochs, mean))
    
 if __name__ == '__main__':
     import argparse
@@ -110,17 +133,16 @@ if __name__ == '__main__':
     else:
         Param(torch.cuda.FloatTensor, torch.device("cuda:{}".format(args.cuda)))
     
-    env = make_jobmatch_env(
-        n_freelancers=args.n_freelancers, 
-        n_recruiters=args.n_recruiters,
+    budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij = get_parameters(args.n_freelancers, args.n_recruiters, args.exp_no)    
+    env = make_jobmatch_env(budget, num_of_skills, pay_low, pay_high,
+                            rate_freelancer, rate_recruiter, base_price, u_ij, v_ij,
+                            max_cycles=args.max_cycle, n_freelancers=args.n_freelancers, 
+                            n_recruiters=args.n_recruiters, local_ratio=args.local_ratio)
         
     main(lambda:env, actor_critic=MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, beta=args.beta, 
+        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, # beta=args.beta, 
                        recurrent=args.recurrent, ep_len=args.max_cycle), 
         epochs=args.epochs, max_ep_len=args.max_cycle,
-        beta=args.beta, comm=args.comm, dist_action=args.dist_action, trained_dir=args.trained_dir, 
-        render=args.render, recurrent=args.recurrent, 
-        adv_train=True if args.convert_adv else False,
-        ablate_kwargs=ablate_kwargs, num_agent=args.n_pursuers, 
-        num_adv = len(args.convert_adv) if args.convert_adv is not None else 0,
-        random_attacker=args.test_random_attacker, test_random = args.test_random)
+        trained_dir=args.trained_dir, 
+        recurrent=args.recurrent
+        )
