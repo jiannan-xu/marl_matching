@@ -1,13 +1,14 @@
 from param import Param
 import numpy as np
 import scipy.signal
-from gym.spaces import Box, Discrete
+from gym.spaces import Box, Discrete, MultiBinary
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions.binomial import Binomial
 from torch.distributions.normal import Normal
 from torch.distributions.beta import Beta
 from torch.distributions.categorical import Categorical
@@ -102,6 +103,19 @@ class MLPCategoricalActor(Actor):
     def _log_prob_from_distribution(self, pi, act):
         return pi.log_prob(act)
 
+class MLPMultiBinaryActor(Actor):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, recurrent=False, ep_len=1000):
+        super().__init__()
+        self.logits_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
+        
+    def _distribution(self, obs):
+        logits = self.logits_net(obs)
+        return Binomial(logits=logits)
+        # return torch.sigmoid(logits)
+    
+    def _log_prob_from_distribution(self, pi, act):
+        return 
+        # return torch.sum(act*torch.log(pi) + (1-act)*torch.log(1-pi), dim=1)
 
 class MLPGaussianActor(Actor):
 
@@ -253,6 +267,9 @@ class MLPActorCritic(nn.Module):
         elif isinstance(action_space, Discrete):
             self.beta = False
             self.pi = MLPCategoricalActor(obs_dim, action_space.n, hidden_sizes, 
+                                          activation, recurrent, ep_len)
+        elif isinstance(action_space, MultiBinary):
+            self.pi = MLPMultiBinaryActor(obs_dim, action_space.shape, hidden_sizes,
                                           activation, recurrent, ep_len)
         else:
             self.high = torch.from_numpy(action_space.high).type(Param.dtype).to(Param.device)

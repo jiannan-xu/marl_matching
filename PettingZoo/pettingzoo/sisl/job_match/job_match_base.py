@@ -597,6 +597,7 @@ class Jobmatching_step1():
         self.last_rewards = [np.float64(0) for _ in range(self.n_agents_freelancers)]
         self.last_dones = [False for _ in range(self.n_agents_freelancers)]
         self.last_obs = self.observe_list()
+        return self.last_obs[0]
 
     def step(self, action, agent_id, is_last):
         """
@@ -613,14 +614,23 @@ class Jobmatching_step1():
                 self.application_status[agent_id, i] = 0
         if is_last:
             self.last_obs = self.observe_list()
+            self.step_count += 1
+
+    def update_reward_step(self, last_rewards):
+        self.last_rewards = last_rewards
 
     def observe(self, agent):
         return np.array(self.last_obs[agent], dtype=np.float32)
 
-    def update_env(self, offer_status, past_offer_price, employment_status):
+    def update_env_2(self, offer_status, past_offer_price):
         self.offer_status = offer_status
         self.past_offer_price = past_offer_price
+        
+    def update_env_3(self, employment_status):
         self.employment_status = employment_status
+
+    def output_for_update_env(self):
+        return self.application_status
 
 class Jobmatching_step2():
     """A Bipartite Networked Multi-agent Environment."""
@@ -711,6 +721,8 @@ class Jobmatching_step2():
         self.last_rewards = [np.float64(0) for _ in range(self.n_agents_recruiters)]
         self.last_dones = [False for _ in range(self.n_agents_recruiters)]
         self.last_obs = self.observe_list()
+        
+        return self.last_obs[0]
 
     def step(self, action, agent_id, is_last):
         """
@@ -740,14 +752,22 @@ class Jobmatching_step2():
                     self.past_offer_price[i, agent_id] = action[i]
         if is_last:
             self.last_obs = self.observe_list()
+            self.step_count += 1
+
+    def update_reward_step(self, last_rewards):
+        self.last_rewards = last_rewards
 
     def observe(self, agent):
         return np.array(self.last_obs[agent], dtype=np.float32)
 
-    def update_env(self, employment_status, application_status, offer_status):
-        self.employment_status = employment_status
+    def update_env_1(self, application_status):
         self.application_status = application_status
-        self.offer_status = offer_status
+        
+    def update_env_3(self, employment_status):
+        self.employment_status = employment_status
+        
+    def output_for_update_env(self):
+        return self.offer_status, self.past_offer_price
 
 class Jobmatching_step3():
     """A Bipartite Networked Multi-agent Environment."""
@@ -836,6 +856,8 @@ class Jobmatching_step3():
         self.last_recruiter_rewards = [np.float64(0) for _ in range(self.n_agents_recruiters)]
         self.last_dones = [False for _ in range(self.n_agents_freelancers)]
         self.last_obs = self.observe_list()
+        
+        return self.last_obs[0]
 
     def rewards_handler(self):
         rewards_freelancer = np.zeros(self.n_agents_freelancers)
@@ -883,7 +905,15 @@ class Jobmatching_step3():
     def observe(self, agent):
         return np.array(self.last_obs[agent], dtype=np.float32)
 
-    def update_env(self, application_status, offer_status, past_offer_price):
-        self.application_status = application_status
+    def update_env_2(self, offer_status, past_offer_price):
         self.offer_status = offer_status
         self.past_offer_price = past_offer_price
+
+    def update_env_1(self, application_status):
+        self.application_status = application_status
+        
+    def output_for_update_env(self):
+        return self.employment_status
+    
+    def output_rewards(self):
+        return self.last_rewards, self.last_recruiter_rewards # freelancers, recruiters

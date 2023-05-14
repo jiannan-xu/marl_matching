@@ -85,6 +85,7 @@ class to_parallel_wrapper_comm(ParallelEnv):
         self.agents = self.aec_env.agents
         observations = {agent: self.aec_env.observe(agent) for agent in self.aec_env.agents}
         # communications = {agent: self.aec_env.communicate(agent) for agent in self.aec_env.agents}
+        # for env1 and env2, should get rewards from env3
         return observations, rewards, dones, infos # observations, communications, rewards, dones, infos
 
     # def render(self, mode="human"):

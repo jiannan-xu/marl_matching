@@ -7,6 +7,7 @@ import torch
 import matplotlib
 from torch.optim import Adam
 import gym
+from gym import spaces
 import time
 from copy import deepcopy
 import itertools
@@ -14,34 +15,27 @@ from core import *
 from param import Param
 import pickle
 import concurrent.futures as futures
-from pettingzoo.sisl import foodcollector_v0, foodcollector_v1
+from pettingzoo.sisl import job_match_v1
 #from ppo import DefaultPolicy
  
 def shuffle(comm, k):
     choice = np.random.choice(comm.shape[0], k, replace=False)   
     return comm[choice]
                     
-def make_food_env(comm, **kwargs):
-    if comm:
-        env = foodcollector_v1.parallel_env(**kwargs)
-    else:
-        env = foodcollector_v0.parallel_env(**kwargs)
-    env.reset()
-
-    env.reset()
-    agent = env.agents[0]
-    observation_space = env.observation_spaces[agent]
-    action_space = env.action_spaces[agent]
+def make_jobmatch_env(comm, **kwargs):
+# def make_jobmatch_env(n_freelancers, n_recruiters, 
+#                   max_cycles=500):
+    env_1 = job_match_v1.parallel_env_1(**kwargs)
+    env_2 = job_match_v1.parallel_env_2(**kwargs)
+    env_3 = job_match_v1.parallel_env_3(**kwargs)
+    env_1.reset()
+    env_2.reset()
+    env_3.reset()
     
-    adv_agents = []
-    good_agents = ["pursuer_{}".format(i) for i in range(kwargs["n_pursuers"])]
-    #for a in all_agents:
-        #if convert and a in convert:
-            #adv_agents.append(a)
-            #env.unwrapped.convert_agent(a)
-        #else:
-    #good_agents.append(a)
-    return env, good_agents, adv_agents
+    recruiters = ["recruiter_{}".format(i) for i in range(kwargs["n_recruiters"])]
+    freelancers = ["freelancer_{}".format(i) for i in range(kwargs["n_freelancers"])]
+    
+    return env_1, env_2, env_3, recruiters, freelancers
 
 def main(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), trained_dir=None, 
         beta=False, comm=False, dist_action=False, render=False, 
@@ -99,85 +93,26 @@ if __name__ == '__main__':
     parser.add_argument('--l', type=int, default=2)
     
     parser.add_argument('--epochs', type=int, default=500)
-    parser.add_argument('--beta', action="store_true")
     parser.add_argument('--trained-dir', type=str)
-    parser.add_argument('--render', action="store_true")
-    parser.add_argument('--smart', action="store_true")
     
     ### environment setting
-    parser.add_argument('--window-size', type=int, default=1)
-    parser.add_argument('--n-pursuers', type=int, default=3)
-    parser.add_argument('--n-evaders', type=int, default=1)
-    parser.add_argument('--n-poison', type=int, default=1)
-    parser.add_argument('--poison-scale', type=float, default=0.75)
-    parser.add_argument('--n-sensors',  type=int, default=6)
+    parser.add_argument('--n-freelancers', type=int, default=3)
+    parser.add_argument('--n-recruiters', type=int, default=3)
     parser.add_argument('--max-cycle', type=int, default=200)
-    parser.add_argument('--comm', action="store_true")
-    parser.add_argument('--comm-freq',  type=int, default=1)
-    parser.add_argument('--dist-action', action="store_true")
-    parser.add_argument('--victim-dist-action', action="store_true")
-    parser.add_argument('--sensor-range',  type=float, default=0.2)
-    parser.add_argument('--evader-speed', type=float, default=0)
-    parser.add_argument('--poison-speed', type=float, default=0)
-    parser.add_argument('--speed-features', action="store_true")
+    
     parser.add_argument('--recurrent', action="store_true")
-    parser.add_argument('--food-revive', action="store_true", help="whether the food can be refreshed after being eaten")
-    parser.add_argument('--truth', action="store_true")
     parser.add_argument('--obs-normalize', action="store_true")
-    
-    parser.add_argument('--test-random-attacker', action="store_true")
-    parser.add_argument('--convert-adv', type=str, nargs='+')
-    parser.add_argument('--good-policy', type=str)
-    parser.add_argument('--victim', type=str, default="pursuer_0")
-    
-    parser.add_argument('--ablate', action='store_true')
-    parser.add_argument('--ablate-k', type=int, default=1)
-    parser.add_argument('--ablate-median', type=int, default=1)
-    parser.add_argument('--test-random', action="store_true")
-    
-    parser.add_argument('--alpha', type=float, default = 0.0, 
-                        help='exponential moving average for confidence reweighting ablation')
-    parser.add_argument('--detector-policy-dir', type=str, default=None)
     args = parser.parse_args()
     gym.logger.set_level(40)
-    
-    if args.ablate:
-        ablate_kwargs={"k":args.ablate_k, "n":args.n_pursuers, 
-                       "adv_train": True if args.convert_adv else False, 
-                       "adv_agents": args.convert_adv if args.convert_adv else [],
-                       "median":args.ablate_median}
-    else:
-        ablate_kwargs=None
-    
-    confidence_kwargs = {'alpha':args.alpha,
-                         'detector_policy_dir':args.detector_policy_dir} if args.alpha > 0 else None
-    
+
     if args.no_cuda:
         Param(torch.FloatTensor, torch.device("cpu"))
     else:
         Param(torch.cuda.FloatTensor, torch.device("cuda:{}".format(args.cuda)))
     
-    ### Please make sure the following argument names are the same as the FoodCollector's init function
-    if args.convert_adv:
-        env = make_advcomm_env(adv_agents=args.convert_adv, good_policy_dir=args.good_policy, victim=args.victim,
-                ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, 
-                            recurrent=args.recurrent, ep_len=args.max_cycle),
-                ablate_kwargs = ablate_kwargs, confidence_kwargs = confidence_kwargs,
-                window_size=args.window_size, poison_scale=args.poison_scale,  food_revive=args.food_revive,
-                max_cycles=args.max_cycle, n_pursuers=args.n_pursuers, n_evaders=args.n_evaders, 
-                n_poison=args.n_poison, n_sensors=args.n_sensors, dist_action=args.victim_dist_action,
-                sensor_range=args.sensor_range, evader_speed=args.evader_speed, poison_speed=args.poison_speed,
-                speed_features=args.speed_features, use_groudtruth=args.truth, smart_comm=args.smart, 
-                comm_freq=args.comm_freq, victim_dist_action=args.victim_dist_action)
-    else:
-        env = make_food_env(
-                comm=args.comm, max_cycles=args.max_cycle,
-                window_size=args.window_size, poison_scale=args.poison_scale, food_revive=args.food_revive,
-                n_pursuers=args.n_pursuers, n_evaders=args.n_evaders, 
-                n_poison=args.n_poison, n_sensors=args.n_sensors, dist_action=args.dist_action,
-                sensor_range=args.sensor_range, evader_speed=args.evader_speed, poison_speed=args.poison_speed,
-                speed_features=args.speed_features, use_groudtruth=args.truth, 
-                smart_comm=args.smart, comm_freq=args.comm_freq)
+    env = make_jobmatch_env(
+        n_freelancers=args.n_freelancers, 
+        n_recruiters=args.n_recruiters,
         
     main(lambda:env, actor_critic=MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, beta=args.beta, 
