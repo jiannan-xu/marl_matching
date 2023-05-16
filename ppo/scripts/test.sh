@@ -1,0 +1,1 @@
+python test.py --obs-normalize --cuda 0

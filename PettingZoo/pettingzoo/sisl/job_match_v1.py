@@ -22,18 +22,14 @@ from pettingzoo.utils.env import ParallelEnv
 
 def env_1(**kwargs):
     env = raw_env_1(**kwargs)
-    env = wrappers.OrderEnforcingWrapper(env)
     return env
 
 def env_2(**kwargs):
     env = raw_env_2(**kwargs)
-    env = wrappers.ClipOutOfBoundsWrapper(env)
-    env = wrappers.OrderEnforcingWrapper(env)
     return env
 
 def env_3(**kwargs):
     env = raw_env_3(**kwargs)
-    env = wrappers.OrderEnforcingWrapper(env)
     return env
 
 class to_parallel_wrapper_comm(ParallelEnv):
@@ -111,6 +107,8 @@ parallel_env_3 = parallel_comm_wrapper_fn(env_3)
 
 class raw_env_1(AECEnv):
 
+    metadata = {}
+
     # metadata = {'render.modes': ['human', "rgb_array"], 'name': 'foodcollector_v1'}
 
     def __init__(self, *args, **kwargs):
@@ -171,6 +169,7 @@ class raw_env_1(AECEnv):
 
 class raw_env_2(AECEnv):
 
+    metadata = {}
     # metadata = {'render.modes': ['human', "rgb_array"], 'name': 'foodcollector_v1'}
 
     def __init__(self, *args, **kwargs):
@@ -231,6 +230,7 @@ class raw_env_2(AECEnv):
 
 class raw_env_3(AECEnv):
 
+    metadata = {}
     # metadata = {'render.modes': ['human', "rgb_array"], 'name': 'foodcollector_v1'}
 
     def __init__(self, *args, **kwargs):

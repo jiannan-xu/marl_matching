@@ -114,7 +114,7 @@ class MLPMultiBinaryActor(Actor):
         # return torch.sigmoid(logits)
     
     def _log_prob_from_distribution(self, pi, act):
-        return 
+        return pi.log_prob(act)
         # return torch.sum(act*torch.log(pi) + (1-act)*torch.log(1-pi), dim=1)
 
 class MLPGaussianActor(Actor):
@@ -269,7 +269,7 @@ class MLPActorCritic(nn.Module):
             self.pi = MLPCategoricalActor(obs_dim, action_space.n, hidden_sizes, 
                                           activation, recurrent, ep_len)
         elif isinstance(action_space, MultiBinary):
-            self.pi = MLPMultiBinaryActor(obs_dim, action_space.shape, hidden_sizes,
+            self.pi = MLPMultiBinaryActor(obs_dim, action_space.shape[0], hidden_sizes,
                                           activation, recurrent, ep_len)
         else:
             self.high = torch.from_numpy(action_space.high).type(Param.dtype).to(Param.device)
@@ -307,6 +307,8 @@ class MLPActorCritic(nn.Module):
         return self.step(obs)[0]
         
     def save(self, log_dir='./learned_models/', model_name='ppo_policy'):
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         torch.save([self.state_dict(), self.moving_mean, self.moving_std], os.path.join(log_dir,model_name))
     
     ### Return Normalized Observation
@@ -348,9 +350,12 @@ def concatenate(obs, comm, ablate_kwargs=None, idx_list=None):
 
 def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len, 
                 freelancers, recruiters, recurrent=False):
-    action_space_1 = env_1.action_space
-    action_space_2 = env_2.action_space
-    action_space_3 = env_3.action_space
+    logger_file = open(os.path.join("./data", "logger_test_ppo.txt"), "a")
+    default_recruiter_name = recruiters[0]
+    default_freelancer_name = freelancers[0]   
+    action_space_1 = env_1.action_spaces[default_freelancer_name]
+    action_space_2 = env_2.action_spaces[default_recruiter_name]
+    action_space_3 = env_3.action_spaces[default_freelancer_name]
     low, high = action_space_2.low, action_space_2.high
         
     freelancer_rewards = [[]]*len(freelancers)
@@ -378,8 +383,9 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 a = a.cpu().numpy()
                 good_actions_1[agent] = a
             next_o1, reward_1, done_1, _ = env_1.step(good_actions_1)
-            env_2.env.update_env_1(env_1.env.output_for_update_env())
-            env_3.env.update_env_1(env_1.env.output_for_update_env())
+            app_status = env_1.aec_env.env.output_for_update_env()
+            env_2.aec_env.env.update_env_1(app_status)
+            env_3.aec_env.env.update_env_1(app_status)
             
             for agent in recruiters:
                 a = ac_2.act(torch.from_numpy(o_2[agent]).to(Param.device).type(Param.dtype))
@@ -387,8 +393,9 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 a = np.clip(a, low, high)
                 good_actions_2[agent] = a
             next_o2, reward_2, done_2, _ = env_2.step(good_actions_2)
-            env_1.env.update_env_2(env_2.env.output_for_update_env())
-            env_3.env.update_env_2(env_2.env.output_for_update_env())
+            off_status, pri_status = env_2.aec_env.env.output_for_update_env()
+            env_1.aec_env.env.update_env_2(off_status, pri_status)
+            env_3.aec_env.env.update_env_2(off_status, pri_status)
             
             for agent in freelancers:
                 a = ac_3.act(torch.from_numpy(o_3[agent]).to(Param.device).type(Param.dtype))
@@ -396,10 +403,14 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 good_actions_3[agent] = a
                 
             next_o3, reward_3, done_3, _ = env_3.step(good_actions_3)
-            env_1.env.update_env_3(env_3.env.output_for_update_env())
-            env_2.env.update_env_3(env_3.env.output_for_update_env())
+            emp_status = env_3.aec_env.env.output_for_update_env()
+            env_1.aec_env.env.update_env_3(emp_status)
+            env_2.aec_env.env.update_env_3(emp_status)
             
-            reward_1, reward_2 = env_3.env.output_rewards()
+            _, r2 = env_3.aec_env.env.output_rewards()
+            for i in range(len(recruiters)):
+                reward_2[recruiters[i]] = r2[i]
+            reward_1 = reward_3
             for i in range(len(freelancers)):
                 agent = freelancers[i]
                 if done_1[agent] or done_3[agent]:
@@ -410,9 +421,10 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 if done_2[agent]:
                     done = True
                 recruiter_episode_rewards[i] += reward_2[agent]
-            print(good_actions_1)
-            print(good_actions_2)
-            print(good_actions_3)
+            logger_file.write("action_1: {}\n".format(good_actions_1))
+            logger_file.write("action_2: {}\n".format(good_actions_2))
+            logger_file.write("action_3: {}\n".format(good_actions_3))
+            logger_file.write("employment: {}\n".format(emp_status))
             o_1 = next_o1
             o_2 = next_o2
             o_3 = next_o3
@@ -433,14 +445,14 @@ def get_parameters(n_freelancers, n_recruiters, exp_no):
         assert n_freelancers == 3
         assert n_recruiters == 3
         budget = np.ones(3)
-        base_price = np.array([80000, 120000, 160000])
-        low_price = np.array([60000, 100000, 140000])
-        high_price = np.array([100000, 140000, 180000])
+        base_price = np.array([8, 12, 16])
+        low_price = np.array([6, 10, 14])
+        high_price = np.array([10, 14, 18])
         rate_freelancer = np.array([1, 50, 100])
         rate_recruiter = np.array([1, 50, 100])
         num_of_skills = np.array([1, 2, 3])
-        u_ij = np.array([[80000, 80000, 80000], [130000, 130000, 130000], [180000, 180000, 180000]])
-        v_ij = np.array([[80000, 80000, 80000], [110000, 110000, 110000], [140000, 140000, 140000]])
+        u_ij = np.array([[8, 8, 8], [13, 13, 13], [18, 18, 18]])
+        v_ij = np.array([[8, 8, 8], [11, 11, 11], [14, 14, 14]])
     else:
         return NotImplementedError
     return budget, base_price, low_price, high_price, rate_freelancer, rate_recruiter, num_of_skills, u_ij, v_ij

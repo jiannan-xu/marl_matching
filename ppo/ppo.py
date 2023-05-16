@@ -107,36 +107,33 @@ class PPOBuffer:
                     adv=from_numpy(self.adv_buf), logp=self.logp_buf)
         return data
 
-def make_jobmatch_env(comm, **kwargs):
-# def make_jobmatch_env(n_freelancers, n_recruiters, 
-#                   max_cycles=500):
+def make_jobmatch_env(**kwargs):
+    # print(kwargs)
     env_1 = job_match_v1.parallel_env_1(**kwargs)
+    # print(kwargs)
     env_2 = job_match_v1.parallel_env_2(**kwargs)
+    # print(kwargs)
     env_3 = job_match_v1.parallel_env_3(**kwargs)
     env_1.reset()
     env_2.reset()
     env_3.reset()
     
-    recruiters = ["recruiter_{}".format(i) for i in range(kwargs["n_recruiters"])]
-    freelancers = ["freelancer_{}".format(i) for i in range(kwargs["n_freelancers"])]
+    recruiters = ["recruiter_{}".format(i) for i in range(kwargs["n_agents_recruiters"])]
+    freelancers = ["freelancer_{}".format(i) for i in range(kwargs["n_agents_freelancers"])]
     
     return env_1, env_2, env_3, recruiters, freelancers
                
 def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
-        target_kl=0.01, save_freq=10, name_env="HalfCheetah-v3", epoch_smoothed=10,
-        no_save=False, verbose=False, log_freq=50, exp_name='ppo', trained_dir=None, 
-        obs_normalize=False, 
-        # comm=False, 
-        # dist_action=False, render=False, 
-        recurrent=False, 
-        # count_agent='pursuer_0'
+        target_kl=0.01, save_freq=10, epoch_smoothed=10,
+        no_save=False, verbose=False, log_freq=50, trained_dir=None, 
+        obs_normalize=False, recurrent=False, 
         ):
  
     # Setup logger file and reward file
-    logger_file = open(os.path.join(Param.data_dir, r"logger_{}.txt".format(exp_name)), "a")
-    rew_file = open(os.path.join(Param.data_dir, r"reward_{}.txt".format(exp_name)), "wt")
+    logger_file = open(os.path.join(Param.data_dir, "logger_ppo.txt"), "a")
+    rew_file = open(os.path.join(Param.data_dir, "reward_ppo.txt"), "wt")
     
     # Random seed
     torch.manual_seed(seed)
@@ -149,13 +146,20 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     print("Freelancers:{}".format(recruiters))
     print("Recruiters:{}".format(freelancers))
     
-    observation_space_1 = env_1.observation_space[default_freelancer_name]
-    observation_space_2 = env_2.observation_space[default_recruiter_name]
-    observation_space_3 = env_3.observation_space[default_freelancer_name]
+    observation_space_1 = env_1.observation_spaces[default_freelancer_name]
+    observation_space_2 = env_2.observation_spaces[default_recruiter_name]
+    observation_space_3 = env_3.observation_spaces[default_freelancer_name]
     
-    action_space_1 = env_1.action_space[default_freelancer_name]
-    action_space_2 = env_2.action_space[default_recruiter_name]
-    action_space_3 = env_3.action_space[default_freelancer_name]
+    action_space_1 = env_1.action_spaces[default_freelancer_name]
+    action_space_2 = env_2.action_spaces[default_recruiter_name]
+    action_space_3 = env_3.action_spaces[default_freelancer_name]
+
+    print("Observation space 1:{}".format(observation_space_1))
+    print("Observation space 2:{}".format(observation_space_2))
+    print("Observation space 3:{}".format(observation_space_3))
+    print("Action space 1:{}".format(action_space_1))
+    print("Action space 2:{}".format(action_space_2))
+    print("Action space 3:{}".format(action_space_3))
     
     act_dim_1 = action_space_1.shape    # multibinary
     act_dim_2 = action_space_2.shape    # box
@@ -167,6 +171,8 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     
     high = torch.from_numpy(action_space_2.high).to(Param.device).type(Param.dtype)
     low = torch.from_numpy(action_space_2.low).to(Param.device).type(Param.dtype)
+
+    print(high, low)
     
     print("Obs 1 dim:{}, Act 1 dim:{}".format(obs_dim_1, act_dim_1))
     print("Obs 2 dim:{}, Act 2 dim:{}".format(obs_dim_2, act_dim_2))
@@ -214,6 +220,8 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     bufs_1 = {}
     bufs_2 = {}
     bufs_3 = {}
+    print(obs_dim_1, obs_dim_2, obs_dim_3)
+    print(act_dim_1, act_dim_2, act_dim_3)
     for agent in freelancers:
         bufs_1[agent] = PPOBuffer(obs_dim_1, act_dim_1, steps_per_epoch, gamma, lam)
     for agent in recruiters:
@@ -222,14 +230,17 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         bufs_3[agent] = PPOBuffer(obs_dim_3, act_dim_3, steps_per_epoch, gamma, lam)
     
     # Set up function for computing PPO policy loss
-    def compute_loss_pi(data, ac, beta):
+    def compute_loss_pi(data, ac, beta, sum_logp=False):
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        # print(obs.shape, act.shape, adv.shape, logp_old.shape)
+        # print(obs, act, adv, logp_old)
         obs = ac.normalize(obs)
         act_info = dict(act_mean=torch.mean(act), act_std=torch.std(act))
         if beta:
             act = (act-low)/(high-low)
         pi, logp = ac.pi(obs, act)
-            
+        if sum_logp:
+            logp = logp.sum(axis=-1)
         ratio = torch.exp(logp - logp_old)
         clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
@@ -256,15 +267,15 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     pi_optimizer_3 = Adam(ac_3.pi.parameters(), lr=pi_lr)
     vf_optimizer_3 = Adam(ac_3.v.parameters(), lr=vf_lr)
 
-    def update(data, pi_optimizer, vf_optimizer, ac, beta):
-        pi_l_old, pi_info_old, act_info = compute_loss_pi(data)
+    def update(data, pi_optimizer, vf_optimizer, ac, beta, sum_logp=False):
+        pi_l_old, pi_info_old, act_info = compute_loss_pi(data, ac, beta, sum_logp)
         pi_l_old = pi_l_old.item()
         v_l_old = compute_loss_v(data, ac).item()
 
         # Train policy with multiple steps of gradient descent
         for i in range(train_pi_iters):
             pi_optimizer.zero_grad()
-            loss_pi, pi_info, act_info = compute_loss_pi(data, ac, beta)
+            loss_pi, pi_info, act_info = compute_loss_pi(data, ac, beta, sum_logp)
             kl = pi_info['kl']
             if kl > 1.5 * target_kl and not verbose:
                 print('Early stopping at step %d due to reaching max kl.'%i)
@@ -313,9 +324,6 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         avg_return_2, avg_len_2 = [], []
         avg_return_3, avg_len_3 = [], []
         
-        # if adv_train:
-        #     all_rewards = {a: [] for a in env.agents}
-        
         ### Initialize hidden states for reucrrent network
         if recurrent:
             ac_1.initialize()
@@ -330,50 +338,75 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
             for agent in freelancers:
                 a, v1, logp = ac_1.step(torch.from_numpy(o1[agent]).\
                                 to(Param.device).type(Param.dtype), train=obs_normalize)
+                # print('1', a, v1, logp)
+                logger_file.write('1 {} {} {} {}\n'.format(agent, a, v1, logp))
                 values_1[agent] = v1
-                log_probs_1[agent] = logp
+                log_probs_1[agent] = torch.sum(logp)
                 a = a.cpu().numpy()
                 good_actions_1[agent] = a
             # reward_1 is empty
             next_o1, reward_1, done_1, infos_1 = env_1.step(good_actions_1)
-            
-            env_2.env.update_env_1(env_1.env.output_for_update_env())
-            env_3.env.update_env_1(env_1.env.output_for_update_env())
+            app_status = env_1.aec_env.env.output_for_update_env()
+            env_2.aec_env.env.update_env_1(app_status)
+            env_3.aec_env.env.update_env_1(app_status)
+
+            # print('app_status', app_status)
+            # logger_file.write('app_status {}\n'.format(app_status))
             
             for agent in recruiters:
                 a, v2, logp = ac_2.step(torch.from_numpy(o2[agent]).\
                                 to(Param.device).type(Param.dtype), train=obs_normalize)
+                # print('2', a, v2, logp)
+                logger_file.write('2 {} {} {} {}\n'.format(agent, a, v1, logp))
                 values_2[agent] = v2
                 log_probs_2[agent] = logp
                 a = a.cpu().numpy()
                 good_actions_2[agent] = a
                 
             next_o2, reward_2, done_2, infos_2 = env_2.step(good_actions_2)
-            
-            env_1.env.update_env_2(env_2.env.output_for_update_env())
-            env_3.env.update_env_2(env_2.env.output_for_update_env())
-            
-            for agent in recruiters:
+            off_status, pri_status = env_2.aec_env.env.output_for_update_env()
+            env_1.aec_env.env.update_env_2(off_status, pri_status)
+            env_3.aec_env.env.update_env_2(off_status, pri_status)
+
+            # print('off_status', off_status)
+            # logger_file.write('off_status {}\n'.format(off_status))
+            # print('pri_status', pri_status)
+            # logger_file.write('pri_status {}\n'.format(pri_status))
+
+            for agent in freelancers:
                 a, v3, logp = ac_3.step(torch.from_numpy(o3[agent]).\
                                 to(Param.device).type(Param.dtype), train=obs_normalize)
+                logger_file.write('3 {} {} {} {}\n'.format(agent, a, v1, logp))
+                # print('3', a, v3, logp)
                 values_3[agent] = v3
                 log_probs_3[agent] = logp
                 a = a.item()
                 good_actions_3[agent] = a
                 
             next_o3, reward_3, done_3, infos_3 = env_3.step(good_actions_3)
-            
-            env_1.env.update_env_3(env_3.env.output_for_update_env())
-            env_2.env.update_env_3(env_3.env.output_for_update_env())
-            
-            reward_1, reward_2 = env_3.env.output_rewards()
-            
+            emp_status = env_3.aec_env.env.output_for_update_env()
+
+            # print('emp_status', emp_status)
+            # logger_file.write('emp_status {}\n'.format(emp_status))
+
+            env_1.aec_env.env.update_env_3(emp_status)
+            env_2.aec_env.env.update_env_3(emp_status)
+            _, r2 = env_3.aec_env.env.output_rewards()
+            for i in range(len(recruiters)):
+                reward_2[recruiters[i]] = r2[i]
+            reward_1 = reward_3
+
             for i in range(len(freelancers)):
                 agent = freelancers[i]
                 if freelancers[i] in env_1.agents:
                     good_total_rewards_1[i] += reward_1[agent]
                 if done_1[agent]:
                     terminal = True
+                # print(o1[agent])
+                # print(good_actions_1[agent])
+                # print(reward_1[agent])
+                # print(values_1[agent])
+                # print(log_probs_1[agent])
                 bufs_1[agent].store(o1[agent], good_actions_1[agent],
                                     reward_1[agent], values_1[agent], log_probs_1[agent])
                 
@@ -491,51 +524,54 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         
         data_1 = dict(obs=obs_buf_1, act=act_buf_1, ret=ret_buf_1,
                     adv=adv_buf_1, logp=logp_buf_1)
+        # print(data_1)
         data_2 = dict(obs=obs_buf_2, act=act_buf_2, ret=ret_buf_2,
                     adv=adv_buf_2, logp=logp_buf_2)
         data_3 = dict(obs=obs_buf_3, act=act_buf_3, ret=ret_buf_3,
                     adv=adv_buf_3, logp=logp_buf_3)
         
-        param_dict_1 = update(data_1, pi_optimizer_1, vf_optimizer_1, ac_1, False)
-        param_dict_2 = update(data_2, pi_optimizer_2, vf_optimizer_2, ac_2, True)
-        param_dict_3 = update(data_3, pi_optimizer_3, vf_optimizer_3, ac_3, False)
+        param_dict_1 = update(data_1, pi_optimizer_1, vf_optimizer_1, ac_1, False, True)
+        param_dict_2 = update(data_2, pi_optimizer_2, vf_optimizer_2, ac_2, True, False)
+        param_dict_3 = update(data_3, pi_optimizer_3, vf_optimizer_3, ac_3, False, False)
         
         epoch_return_1.append(sum(avg_return_1)/len(avg_return_1))
         epoch_return_2.append(sum(avg_return_2)/len(avg_return_2))
         epoch_return_3.append(sum(avg_return_3)/len(avg_return_3))
             
-        if not(verbose):
-            print("----------------------Epoch {}----------------------------".format(epoch))
-            logger_file.write("----------------------Epoch {}----------------------------\n".format(epoch))
-            print("EpRet:{}".format(sum(avg_return_1)/len(avg_return_1)))
-            logger_file.write("EpRet:{}\n".format(sum(avg_return_1)/len(avg_return_1)))
-            print("EpLen:{}".format(sum(avg_len_1)/len(avg_len_1)))
-            logger_file.write("EpLen:{}\n".format(sum(avg_len_1)/len(avg_len_1)))
-            print('V Values:{}'.format(v1))
-            logger_file.write('V Values:{}\n'.format(v1))
-            print('Total Interaction with Environment:{}'.format((epoch+1)*steps_per_epoch))
-            logger_file.write('Total Interaction with Environment:{}\n'.format((epoch+1)*steps_per_epoch))
-            print('LossPi:{}'.format(param_dict_1['LossPi']))
-            logger_file.write('LossPi:{}\n'.format(param_dict_1['LossPi']))
-            print('LossV:{}'.format(param_dict_1['LossV']))
-            logger_file.write('LossV:{}\n'.format(param_dict_1['LossV']))
-            print('DeltaLossPi:{}'.format(param_dict_1['DeltaLossPi']))
-            logger_file.write('DeltaLossPi:{}\n'.format(param_dict_1['DeltaLossPi']))
-            print('DeltaLossV:{}'.format(param_dict_1['DeltaLossV']))
-            logger_file.write('DeltaLossV:{}\n'.format(param_dict_1['DeltaLossV']))
-            print('Entropy:{}'.format(param_dict_1['Entropy']))
-            logger_file.write('Entropy:{}\n'.format(param_dict_1['Entropy']))
-            print('ClipFrac:{}'.format(param_dict_1['ClipFrac']))
-            logger_file.write('ClipFrac:{}\n'.format(param_dict_1['ClipFrac']))
-            print('KL:{}'.format(param_dict_1['KL']))
-            logger_file.write('KL:{}\n'.format(param_dict_1['KL']))
-            print('StopIter:{}'.format(param_dict_1['StopIter']))
-            logger_file.write('StopIter:{}\n'.format(param_dict_1['StopIter']))
-            print('Time:{}'.format(time.time()-start_time))
-            logger_file.write('Time:{}\n'.format(time.time()-start_time))
-            rew_file.write("Episode {}  EpRet:{}\n".format(epoch, sum(avg_return_1)/len(avg_return_1)))
-            rew_file.flush()
-            logger_file.flush()
+        print("----------------------Epoch {}----------------------------".format(epoch))
+        logger_file.write("----------------------Epoch {}----------------------------\n".format(epoch))
+        print("EpRet:{}".format(sum(avg_return_1)/len(avg_return_1)))
+        logger_file.write("EpRet:{}\n".format(sum(avg_return_1)/len(avg_return_1)))
+        print("EpLen:{}".format(sum(avg_len_1)/len(avg_len_1)))
+        logger_file.write("EpLen:{}\n".format(sum(avg_len_1)/len(avg_len_1)))
+        print('V Values:{}'.format(v1))
+        logger_file.write('V Values:{}\n'.format(v1))
+        print('Total Interaction with Environment:{}'.format((epoch+1)*steps_per_epoch))
+        logger_file.write('Total Interaction with Environment:{}\n'.format((epoch+1)*steps_per_epoch))
+        print('LossPi:{}'.format(param_dict_1['LossPi']))
+        logger_file.write('LossPi:{}\n'.format(param_dict_1['LossPi']))
+        print('LossV:{}'.format(param_dict_1['LossV']))
+        logger_file.write('LossV:{}\n'.format(param_dict_1['LossV']))
+        print('DeltaLossPi:{}'.format(param_dict_1['DeltaLossPi']))
+        logger_file.write('DeltaLossPi:{}\n'.format(param_dict_1['DeltaLossPi']))
+        print('DeltaLossV:{}'.format(param_dict_1['DeltaLossV']))
+        logger_file.write('DeltaLossV:{}\n'.format(param_dict_1['DeltaLossV']))
+        print('Entropy:{}'.format(param_dict_1['Entropy']))
+        logger_file.write('Entropy:{}\n'.format(param_dict_1['Entropy']))
+        print('ClipFrac:{}'.format(param_dict_1['ClipFrac']))
+        logger_file.write('ClipFrac:{}\n'.format(param_dict_1['ClipFrac']))
+        print('KL:{}'.format(param_dict_1['KL']))
+        logger_file.write('KL:{}\n'.format(param_dict_1['KL']))
+        print('StopIter:{}'.format(param_dict_1['StopIter']))
+        logger_file.write('StopIter:{}\n'.format(param_dict_1['StopIter']))
+        print('Time:{}'.format(time.time()-start_time))
+        logger_file.write('Time:{}\n'.format(time.time()-start_time))
+        rew_file.write("Episode {}  EpRet:{}\n".format(epoch, sum(avg_return_1)/len(avg_return_1)))
+        rew_file.flush()
+        logger_file.flush()
+
+        # print(env_3.aec_env.env.employment_status)
+        # logger_file.write(str(env_3.aec_env.env.employment_status))
         
         ### Every few epochs, evaluate the current model's performance and save the model 
         ### if the eval performance is the best in the history.
@@ -567,10 +603,9 @@ if __name__ == '__main__':
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99) # ppo gamma
     parser.add_argument('--seed', '-s', type=int, default=0) 
-    parser.add_argument('--steps', type=int, default=4000)
+    parser.add_argument('--steps', type=int, default=5000)
     parser.add_argument('--epoch-smoothed', type=int, default=10)
-    parser.add_argument('--epochs', type=int, default=500)
-    parser.add_argument('--exp-name', type=str, default='ppo')
+    parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--log-freq', type=int, default=50)
     parser.add_argument('--obs-normalize', action="store_true")
     parser.add_argument('--trained-dir', type=str)
@@ -578,7 +613,8 @@ if __name__ == '__main__':
     parser.add_argument('--n-recruiters', type=int, default=3)
     parser.add_argument('--max-cycle', type=int, default=200)
     parser.add_argument('--recurrent', action="store_true")
-    parser.add_argument('--exp-no', type=int, default=1)
+    parser.add_argument('--exp-no', type=int, default=0)
+    # parser.add
     
     args = parser.parse_args()
     gym.logger.set_level(40)
@@ -594,12 +630,14 @@ if __name__ == '__main__':
     #                 rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, 
     #                 max_cycles, n_agents_recruiters = 2, 
     #                 n_agents_freelancers = 2, local_ratio = 1, **kwargs):
-    env = make_jobmatch_env(budget, num_of_skills, pay_low, pay_high,
-                            rate_freelancer, rate_recruiter, base_price, u_ij, v_ij,
-                            max_cycles=args.max_cycle, n_freelancers=args.n_freelancers, 
-                            n_recruiters=args.n_recruiters, local_ratio=args.local_ratio)
+    env = make_jobmatch_env(budget=budget, num_of_skills=num_of_skills, pay_low=pay_low, pay_high=pay_high,
+                            rate_freelancer=rate_freelancer, rate_recruiter=rate_recruiter, base_price=base_price, u_ij=u_ij, v_ij=v_ij,
+                            max_cycles=args.max_cycle, n_agents_freelancers=args.n_freelancers, n_agents_recruiters=args.n_recruiters)
     
-    logger_file = open(os.path.join(Param.data_dir, r"logger_{}.txt".format(args.exp_name)), "wt")
+    if not os.path.exists(Param.data_dir):
+        os.makedirs(Param.data_dir)
+
+    logger_file = open(os.path.join(Param.data_dir, "logger_ppo.txt"), "wt")
     logger_file.write("Number of Freelancers: {}  Number of Recruiters:{}\n".\
                       format(args.n_freelancers, args.n_recruiters))
     logger_file.close()
@@ -609,13 +647,7 @@ if __name__ == '__main__':
         ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, recurrent=args.recurrent, ep_len=args.max_cycle), 
         gamma=args.gamma, vf_lr=args.vf_lr, pi_lr=args.pi_lr,
         seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs, max_ep_len=args.max_cycle,
-        name_env = args.env, epoch_smoothed=args.epoch_smoothed,
+        epoch_smoothed=args.epoch_smoothed,
         no_save = args.no_save, verbose=args.verbose, log_freq = args.log_freq, 
-        exp_name=args.exp_name, obs_normalize = args.obs_normalize, 
-        # comm=args.comm, 
-        # dist_action=args.dist_action, 
-        trained_dir=args.trained_dir, 
-        # render=args.render, 
-        recurrent=args.recurrent, 
-        # count_agent=args.count_agent
-        )
+        obs_normalize = args.obs_normalize, 
+        trained_dir=args.trained_dir, recurrent=args.recurrent)

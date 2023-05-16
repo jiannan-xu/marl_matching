@@ -10,11 +10,11 @@ from .._utils import Agent
 import pygame
 import math
 
-MAX_BASE_PRICE = 200000
-MIN_BASE_PRICE = 50000
-DEFAULT_BASE_PRICE = 100000
-NOT_HIRED_PENALTY = 100000
-NOT_ENOUGH_EMPLOYERS_PENALTY = 100000
+MAX_BASE_PRICE = 20
+MIN_BASE_PRICE = 5
+DEFAULT_BASE_PRICE = 10
+NOT_HIRED_PENALTY = 10
+NOT_ENOUGH_EMPLOYERS_PENALTY = 10
 MAX_NUM_SKILLS = 10
 MAX_RATE = 100
 MIN_RATE = 1
@@ -127,45 +127,45 @@ class Individual(Agent):
     def action_space_3(self):
         return spaces.Discrete(self.n_agent_recruiters + 1)
     
-    @property
-    def rate(self):
-        assert self._rate is not None, "Rate is not set"
-        return self._rate
+    # @property
+    # def rate(self):
+    #     assert self._rate is not None, "Rate is not set"
+    #     return self._rate
     
-    @property
-    def budget(self):
-        if self._budget is None and self._group == 'recruiters':
-            raise ValueError("Budget is not set")
-        else:
-            return self._budget
+    # @property
+    # def budget(self):
+    #     if self._budget is None and self._group == 'recruiters':
+    #         raise ValueError("Budget is not set")
+    #     else:
+    #         return self._budget
         
-    @property
-    def base_price(self):
-        if self._base_price is None and self._group == 'recruiters':
-            raise ValueError("Base price is not set")
-        else:
-            return self._base_price
+    # @property
+    # def base_price(self):
+    #     if self._base_price is None and self._group == 'recruiters':
+    #         raise ValueError("Base price is not set")
+    #     else:
+    #         return self._base_price
         
-    @property
-    def n_skills(self):
-        if self._n_skills is None and self._group == 'freelancers':
-            raise ValueError("Number of skills is not set")
-        else:
-            return self._n_skills
+    # @property
+    # def n_skills(self):
+    #     if self._n_skills is None and self._group == 'freelancers':
+    #         raise ValueError("Number of skills is not set")
+    #     else:
+    #         return self._n_skills
         
-    @property
-    def pay_low(self):
-        if self._pay_low is None and self._group == 'freelancers':
-            raise ValueError("Pay low is not set")
-        else:
-            return self._pay_low
+    # @property
+    # def pay_low(self):
+    #     if self._pay_low is None and self._group == 'freelancers':
+    #         raise ValueError("Pay low is not set")
+    #     else:
+    #         return self._pay_low
         
-    @property
-    def pay_upper(self):
-        if self._pay_upper is None and self._group == 'freelancers':
-            raise ValueError("Pay upper is not set")
-        else:
-            return self._pay_upper
+    # @property
+    # def pay_upper(self):
+    #     if self._pay_upper is None and self._group == 'freelancers':
+    #         raise ValueError("Pay upper is not set")
+    #     else:
+    #         return self._pay_upper
 
     def reset(self):
         self.past_rate = np.zeros(self.n_agent_recruiters)
@@ -183,11 +183,11 @@ class Individual(Agent):
    
 class Freelancer_1(Agent):
     def __init__(self, idx, rate, pay_low, pay_upper, n_skills, n_agent_recruiters, n_agent_freelancers):
-        self._idx = idx
-        self._rate = rate
-        self._n_skills = n_skills # num of skills
-        self._pay_low = pay_low # lower bound of the payrange
-        self._pay_upper = pay_upper # higher bound of the payrange
+        self.idx = idx
+        self.rate = rate
+        self.n_skills = n_skills # num of skills
+        self.pay_low = pay_low # lower bound of the payrange
+        self.pay_upper = pay_upper # higher bound of the payrange
         # claim the number of agents in the group (recruiters or freelancers)
         self.n_agent_recruiters = n_agent_recruiters
         self.n_agent_freelancers = n_agent_freelancers
@@ -221,11 +221,11 @@ class Recruiter_2(Agent):
         group: group of the agent (recruiters or freelancers)
         group_num: number of agents in the group (recruiters or freelancers)
         '''
-        self._idx = idx
-        self._rate = rate
+        self.idx = idx
+        self.rate = rate
         # recruiter specific properties
-        self._budget = budget # budget of the agent
-        self._base_price = base_price # base price of the agent
+        self.budget = budget # budget of the agent
+        self.base_price = base_price # base price of the agent
         # claim the number of agents in the group (recruiters or freelancers)
         self.n_agent_recruiters = n_agent_recruiters
         self.n_agent_freelancers = n_agent_freelancers
@@ -250,6 +250,7 @@ class Recruiter_2(Agent):
 
     @property
     def action_space(self):
+        # print(self.pay_low, self.pay_high, self.n_agent_freelancers)
         return spaces.Box(low=self.pay_low, high=self.pay_high, shape=(self.n_agent_freelancers,)) # F
     
     # def reset(self):
@@ -258,11 +259,11 @@ class Recruiter_2(Agent):
      
 class Freelancer_3(Agent):
     def __init__(self, idx, rate, pay_low, pay_upper, n_skills, n_agent_recruiters, n_agent_freelancers):
-        self._idx = idx
-        self._rate = rate
-        self._n_skills = n_skills # num of skills
-        self._pay_low = pay_low # lower bound of the payrange
-        self._pay_upper = pay_upper # higher bound of the payrange
+        self.idx = idx
+        self.rate = rate
+        self.n_skills = n_skills # num of skills
+        self.pay_low = pay_low # lower bound of the payrange
+        self.pay_upper = pay_upper # higher bound of the payrange
         # claim the number of agents in the group (recruiters or freelancers)
         self.n_agent_recruiters = n_agent_recruiters
         self.n_agent_freelancers = n_agent_freelancers
@@ -523,9 +524,10 @@ class Jobmatching():
 class Jobmatching_step1():
     """A Bipartite Networked Multi-agent Environment."""
     def __init__(self, budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, max_cycles, 
-                 n_agents_recruiters = 2, n_agents_freelancers = 2, local_ratio = 1, **kwargs):
+                 n_agents_recruiters, n_agents_freelancers, local_ratio = 1, **kwargs):
         self.n_agents_recruiters = n_agents_recruiters
         self.n_agents_freelancers = n_agents_freelancers
+        self.num_agents = n_agents_freelancers
         self.seed()
         self.agents = [Freelancer_1(idx + 1, rate_freelancer[idx], pay_low[idx], pay_high[idx], num_of_skills[idx], self.n_agents_recruiters, self.n_agents_freelancers) for idx in range(self.n_agents_freelancers)]
         
@@ -557,10 +559,6 @@ class Jobmatching_step1():
         self.step_count = 0
         self.reset()
 
-    @property
-    def agents(self):
-        return self.agents
-
     def get_param_values(self):
         return self.__dict__
 
@@ -579,9 +577,9 @@ class Jobmatching_step1():
                     offer_price = self.past_offer_price[i, idx]
                 else:
                     recruiter_rate = DEFAULT_RATE
-                    offer_price = self._recruiters[idx].base_price
-                obs_i.append(np.concatenate([self._recruiters[idx].base_price, offer_price, freelancer_rate, recruiter_rate, self.employment_status[:, idx].ravel()]))
-            obs_i = np.array(obs_i)
+                    offer_price = self.base_price[idx]
+                obs_i.append(np.append([self.base_price[idx], offer_price, freelancer_rate, recruiter_rate], self.employment_status[:, idx].ravel()))
+            obs_i = np.array(obs_i).flatten()
             obs_list_1.append(obs_i)
         return obs_list_1
         
@@ -634,10 +632,14 @@ class Jobmatching_step1():
 
 class Jobmatching_step2():
     """A Bipartite Networked Multi-agent Environment."""
+    # def __init__(self, budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, max_cycles, 
+    #              n_agents_recruiters = 2, n_agents_freelancers = 2, local_ratio = 1, **kwargs):
     def __init__(self, budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, max_cycles, 
-                 n_agents_recruiters = 2, n_agents_freelancers = 2, local_ratio = 1, **kwargs):
+                 n_agents_recruiters, n_agents_freelancers, local_ratio = 1, **kwargs):
+        # print(n_agents_freelancers, n_agents_recruiters)
         self.n_agents_recruiters = n_agents_recruiters
         self.n_agents_freelancers = n_agents_freelancers
+        self.num_agents = n_agents_recruiters
         self.seed()
         # __init__(self, idx, rate, budget, base_price, n_agent_recruiters, n_agent_freelancers)
         self.agents = [Recruiter_2(idx + 1, rate_recruiter[idx], budget[idx], base_price[idx], pay_low, pay_high, self.n_agents_recruiters, self.n_agents_freelancers)
@@ -649,6 +651,7 @@ class Jobmatching_step2():
         self.rate_freelancer = rate_freelancer
         self.rate_recruiter = rate_recruiter
         self.base_price = base_price
+        self.num_of_skills = num_of_skills
         
         self.action_space = [agent.action_space for agent in self.agents]        
         self.observation_space = [agent.observation_space for agent in self.agents]
@@ -667,10 +670,6 @@ class Jobmatching_step2():
         self.local_ratio = local_ratio
         self.step_count = 0
         self.reset()
-
-    @property
-    def agents(self):
-        return self.agents
 
     def get_param_values(self):
         return self.__dict__
@@ -704,8 +703,8 @@ class Jobmatching_step2():
                 recruiter_rate = self.rate_recruiter[i]
                 offer_status = self.offer_status[idx].ravel()
                 employment_status = self.employment_status[idx].ravel()
-                obs_i.append(np.concatenate([num_of_skills, pay_low, pay_high, freelancer_rate, recruiter_rate, offer_status, employment_status]))
-            obs_i = np.array(obs_i)
+                obs_i.append(np.concatenate((np.array([num_of_skills, pay_low, pay_high, freelancer_rate, recruiter_rate]), offer_status, employment_status)))
+            obs_i = np.array(obs_i).flatten()
             obs_list_1.append(obs_i)
         return obs_list_1
         
@@ -738,18 +737,28 @@ class Jobmatching_step2():
                 if self.application_status[i, agent_id] == 1:
                     self.offer_status[i, agent_id] = 1
                     self.past_offer_price[i, agent_id] = action[i]
+                else:
+                    self.offer_status[i, agent_id] = 0
+                    self.past_offer_price[i, agent_id] = 0
         else:
             # choose the top budget - employed freelancers with the highest offer price
             candidate_prices = []
             for i in range(self.n_agents_freelancers):
                 if self.application_status[i, agent_id] == 1:
                     candidate_prices.append(action[i])
+                else:
+                    candidate_prices.append(0)
             candidate_prices = np.array(candidate_prices)
-            price = np.partition(candidate_prices, -budget + employed)[-budget + employed]
+            k = int(-budget + employed)
+            # print(k)
+            price = np.partition(candidate_prices, k)[k]
             for i in range(self.n_agents_freelancers):
                 if action[i] >= price and self.application_status[i, agent_id] == 1:
                     self.offer_status[i, agent_id] = 1
                     self.past_offer_price[i, agent_id] = action[i]
+                else:
+                    self.offer_status[i, agent_id] = 0
+                    self.past_offer_price[i, agent_id] = 0
         if is_last:
             self.last_obs = self.observe_list()
             self.step_count += 1
@@ -772,9 +781,10 @@ class Jobmatching_step2():
 class Jobmatching_step3():
     """A Bipartite Networked Multi-agent Environment."""
     def __init__(self, budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, max_cycles, 
-                 n_agents_recruiters = 2, n_agents_freelancers = 2, local_ratio = 1, **kwargs):
+                 n_agents_recruiters, n_agents_freelancers, local_ratio = 1, **kwargs):
         self.n_agents_recruiters = n_agents_recruiters
         self.n_agents_freelancers = n_agents_freelancers
+        self.num_agents = n_agents_freelancers
         self.seed()
         self.agents = [Freelancer_3(idx + 1, rate_freelancer[idx], pay_low[idx], pay_high[idx], num_of_skills[idx], self.n_agents_recruiters, self.n_agents_freelancers) for idx in range(self.n_agents_freelancers)]
         
@@ -807,10 +817,6 @@ class Jobmatching_step3():
         self.step_count = 0
         self.reset()
 
-    @property
-    def agents(self):
-        return self.agents
-
     def get_param_values(self):
         return self.__dict__
 
@@ -838,8 +844,8 @@ class Jobmatching_step3():
                     past_offer_price = self.past_offer_price[i, idx]
                 else:
                     past_offer_price = 0
-                obs_i.append(np.concatenate((budget, base_price, past_offer_price, rate_freelancer, rate_recruiter, self.offer_status[:, idx].ravel(), self.employment_status[:, idx].ravel())))
-            obs_i = np.array(obs_i)
+                obs_i.append(np.concatenate((np.array([budget, base_price, past_offer_price, rate_freelancer, rate_recruiter]), self.offer_status[:, idx].ravel(), self.employment_status[:, idx].ravel())))
+            obs_i = np.array(obs_i).flatten()
             obs_list.append(obs_i)
         return obs_list
           
@@ -875,17 +881,19 @@ class Jobmatching_step3():
             if employed_freelancers[i] == 0:
                 rewards_freelancer[i] = -NOT_HIRED_PENALTY
         for j in range(self.n_agents_recruiters):
-            rewards_recruiter[j] -= (self._recruiters[j].budget - employer_num[j]) * NOT_HIRED_PENALTY
+            rewards_recruiter[j] -= (self.budget[j] - employer_num[j]) * NOT_HIRED_PENALTY
+        return rewards_freelancer, rewards_recruiter
 
     def step(self, action, agent_id, is_last):
         """
         1. Update employment status in the environment
         """
         # nonzero offer and have applied
+        for i in range(self.n_agents_recruiters):
+            self.employment_status[agent_id, i] = 0
         if self.application_status[agent_id, action] == 1:
             self.employment_status[agent_id, action] = 1
-        else:
-            self.employment_status[agent_id, action] = 0
+
         if is_last:
             # update rewards
             # rewards_freelancer = np.zeros(self.n_agents_freelancers)

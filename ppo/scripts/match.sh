@@ -1,0 +1,1 @@
+python ppo.py --epochs 20 --obs-normalize --cuda 0
