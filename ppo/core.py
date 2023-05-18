@@ -35,7 +35,6 @@ def from_numpy(n_array, dtype=None):
         return torch.from_numpy(n_array).to(Param.device).type(Param.dtype)
     else:
         return torch.from_numpy(n_array).to(Param.device).type(dtype)
-
     
 def discount_cumsum(x, discount):
     """
@@ -63,7 +62,6 @@ def combined_shape(length, shape=None):
     if shape is None:
         return (length,)
     return (length, shape) if np.isscalar(shape) else (length, *shape)
-
 
 def mlp(sizes, activation, output_activation=nn.Identity):
     layers = []
@@ -216,6 +214,7 @@ class MLPBetaActor(Actor):
         return Beta(alpha, beta)
     
     def _log_prob_from_distribution(self, pi, act):
+        # print('act', act) 
         return pi.log_prob(act).sum(axis=-1)   
     
 class MLPCritic(nn.Module):
@@ -382,7 +381,7 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 a = ac_1.act(torch.from_numpy(o_1[agent]).to(Param.device).type(Param.dtype))
                 a = a.cpu().numpy()
                 good_actions_1[agent] = a
-            next_o1, reward_1, done_1, _ = env_1.step(good_actions_1)
+            next_o1, reward_1, done_1, _, new_good_actions_1 = env_1.step(good_actions_1)
             app_status = env_1.aec_env.env.output_for_update_env()
             env_2.aec_env.env.update_env_1(app_status)
             env_3.aec_env.env.update_env_1(app_status)
@@ -392,7 +391,7 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 a = a.cpu().numpy()
                 a = np.clip(a, low, high)
                 good_actions_2[agent] = a
-            next_o2, reward_2, done_2, _ = env_2.step(good_actions_2)
+            next_o2, reward_2, done_2, _, new_good_actions_2 = env_2.step(good_actions_2)
             off_status, pri_status = env_2.aec_env.env.output_for_update_env()
             env_1.aec_env.env.update_env_2(off_status, pri_status)
             env_3.aec_env.env.update_env_2(off_status, pri_status)
@@ -402,7 +401,7 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 a = a.item()
                 good_actions_3[agent] = a
                 
-            next_o3, reward_3, done_3, _ = env_3.step(good_actions_3)
+            next_o3, reward_3, done_3, _, new_good_actions_3 = env_3.step(good_actions_3)
             emp_status = env_3.aec_env.env.output_for_update_env()
             env_1.aec_env.env.update_env_3(emp_status)
             env_2.aec_env.env.update_env_3(emp_status)
@@ -421,9 +420,12 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 if done_2[agent]:
                     done = True
                 recruiter_episode_rewards[i] += reward_2[agent]
-            logger_file.write("action_1: {}\n".format(good_actions_1))
-            logger_file.write("action_2: {}\n".format(good_actions_2))
-            logger_file.write("action_3: {}\n".format(good_actions_3))
+            logger_file.write("action_1: {}\n".format(new_good_actions_1))
+            logger_file.write("application: {}\n".format(app_status))
+            logger_file.write("action_2: {}\n".format(new_good_actions_2))
+            logger_file.write("offer: {}\n".format(off_status))
+            logger_file.write("price: {}\n".format(pri_status))
+            logger_file.write("action_3: {}\n".format(new_good_actions_3))
             logger_file.write("employment: {}\n".format(emp_status))
             o_1 = next_o1
             o_2 = next_o2
@@ -436,6 +438,8 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
                 break
     reward_f = np.array(freelancer_rewards)
     reward_r = np.array(recruiter_rewards)
+    logger_file.write("freelancer reward: {}\n".format(reward_f))
+    logger_file.write("recruiter reward: {}\n".format(reward_r))
     return np.mean(reward_f), np.std(reward_f), np.mean(reward_r), np.std(reward_r)
 
 
@@ -444,7 +448,7 @@ def get_parameters(n_freelancers, n_recruiters, exp_no):
         # Toy example
         assert n_freelancers == 3
         assert n_recruiters == 3
-        budget = np.ones(3)
+        budget = np.array([10, 14, 20])
         base_price = np.array([8, 12, 16])
         low_price = np.array([6, 10, 14])
         high_price = np.array([10, 14, 18])

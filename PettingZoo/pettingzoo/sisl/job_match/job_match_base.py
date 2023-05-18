@@ -11,15 +11,16 @@ import pygame
 import math
 
 MAX_BASE_PRICE = 20
-MIN_BASE_PRICE = 5
+MIN_BASE_PRICE = 1
 DEFAULT_BASE_PRICE = 10
-NOT_HIRED_PENALTY = 10
-NOT_ENOUGH_EMPLOYERS_PENALTY = 10
+NOT_HIRED_PENALTY = 5
+NOT_ENOUGH_EMPLOYERS_PENALTY = 5
 MAX_NUM_SKILLS = 10
+MIN_NUM_SKILLS = 1
 MAX_RATE = 100
 MIN_RATE = 1
 DEFAULT_RATE = 50
-MAX_BUDGET = 10
+MAX_BUDGET = 60
 
 class Individual(Agent):
     def __init__(self, idx, rate, budget, pay_low, pay_upper, base_price, n_skills, group, n_agent_recruiters, n_agent_freelancers):
@@ -198,12 +199,15 @@ class Freelancer_1(Agent):
     @property
     def observation_space(self):
         return spaces.Dict({
-            # 'budget': spaces.Box(low=0, high=MAX_BUDGET, shape=(self.n_agent_recruiters,)),                     # recruiter's budget; not available to freelancers
-            'base_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)),  # recruiter's base price
-            'offer_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)), # recruiter's past offer price, if any
-            'freelancer_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),         # freelancer's rate
-            'recruiter_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),          # recruiter's past rate, if any
-            'employment_status': spaces.MultiBinary([self.n_agent_recruiters, self.n_agent_freelancers]),         # recruiter's employment status
+            # 'budget': spaces.Box(low=0, high=MAX_BUDGET, shape=(self.n_agent_recruiters,)),                               # recruiter's budget; not available to freelancers
+            'base_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)),            # recruiter's base price
+            'num_of_skills': spaces.Box(low=MIN_NUM_SKILLS, high=MAX_NUM_SKILLS, shape=(self.n_agent_recruiters,)),         # recruiter's number of skills
+            'offer_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)),           # recruiter's past offer price, if any
+            'low_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),            # freelancer's low price
+            'high_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),           # freelancer's high price
+            'freelancer_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),                   # freelancer's rate
+            'recruiter_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),                    # recruiter's past rate, if any
+            'employment_status': spaces.MultiBinary([self.n_agent_recruiters, self.n_agent_freelancers]),                   # recruiter's employment status
         }) # R * (4 + F)
         
     @property
@@ -239,9 +243,11 @@ class Recruiter_2(Agent):
     @property
     def observation_space(self):
         return spaces.Dict({
+            'base_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)),    # recruiter's base price
             'num_of_skills': spaces.Box(low=0, high=MAX_NUM_SKILLS, shape=(self.n_agent_freelancers,)),             # freelancer's number of skills
             'pay_low': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),      # freelancer's lower bound of the payrange
             'pay_high': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),     # freelancer's higher bound of the payrange
+            'budget': spaces.Box(low=0, high=MAX_BUDGET, shape=(self.n_agent_recruiters,)),                         # recruiter's budget; not available to freelancers
             'freelancer_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_freelancers,)),          # freelancer's rate
             'recruiter_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_freelancers,)),           # recruiter's rate
             'offer_status': spaces.MultiBinary([self.n_agent_freelancers, self.n_agent_recruiters]),                # freelancer's offer status
@@ -251,7 +257,7 @@ class Recruiter_2(Agent):
     @property
     def action_space(self):
         # print(self.pay_low, self.pay_high, self.n_agent_freelancers)
-        return spaces.Box(low=self.pay_low, high=self.pay_high, shape=(self.n_agent_freelancers,)) # F
+        return spaces.Box(low=np.zeros(self.n_agent_freelancers), high=self.pay_high, shape=(self.n_agent_freelancers,)) # F
     
     # def reset(self):
     #     self.low_prices = np.zeros(self.n_agent_freelancers)
@@ -274,8 +280,10 @@ class Freelancer_3(Agent):
     @property
     def observation_space(self):
         return spaces.Dict({
-            'budget': spaces.Box(low=0, high=MAX_BUDGET, shape=(self.n_agent_recruiters,)),                     # recruiter's budget; not available to freelancers
             'base_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)),  # recruiter's base price
+            'num_of_skills': spaces.Box(low=0, high=MAX_NUM_SKILLS, shape=(self.n_agent_freelancers,)),             # freelancer's number of skills
+            'pay_low': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),      # freelancer's lower bound of the payrange
+            'pay_high': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_freelancers,)),     # freelancer's higher bound of the payrange
             'offer_price': spaces.Box(low=MIN_BASE_PRICE, high=MAX_BASE_PRICE, shape=(self.n_agent_recruiters,)), # recruiter's past offer price, if any
             'freelancer_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),         # freelancer's rate
             'recruiter_rate': spaces.Box(low=MIN_RATE, high=MAX_RATE, shape=(self.n_agent_recruiters,)),          # recruiter's past rate, if any
@@ -285,7 +293,7 @@ class Freelancer_3(Agent):
         
     @property
     def action_space(self):
-        return spaces.Discrete(self.n_agent_recruiters) # R
+        return spaces.Discrete(self.n_agent_recruiters + 1) # R
 
     # def reset(self): 
     #     self.past_rate = np.zeros(self.n_agent_recruiters)
@@ -531,12 +539,14 @@ class Jobmatching_step1():
         self.seed()
         self.agents = [Freelancer_1(idx + 1, rate_freelancer[idx], pay_low[idx], pay_high[idx], num_of_skills[idx], self.n_agents_recruiters, self.n_agents_freelancers) for idx in range(self.n_agents_freelancers)]
         
+        self.num_of_skills = num_of_skills
         self.budget = budget
         self.pay_low = pay_low
         self.pay_high = pay_high
         self.rate_freelancer = rate_freelancer
         self.rate_recruiter = rate_recruiter
         self.base_price = base_price
+        self.new_actions = dict()
         
         self.u_ij = np.array(u_ij)
         self.v_ij = np.array(v_ij)
@@ -578,7 +588,7 @@ class Jobmatching_step1():
                 else:
                     recruiter_rate = DEFAULT_RATE
                     offer_price = self.base_price[idx]
-                obs_i.append(np.append([self.base_price[idx], offer_price, freelancer_rate, recruiter_rate], self.employment_status[:, idx].ravel()))
+                obs_i.append(np.append([self.base_price[idx], self.num_of_skills[idx], offer_price, self.pay_low[idx], self.pay_high[idx], freelancer_rate, recruiter_rate], self.employment_status[:, idx].ravel()))
             obs_i = np.array(obs_i).flatten()
             obs_list_1.append(obs_i)
         return obs_list_1
@@ -604,12 +614,16 @@ class Jobmatching_step1():
         3. The recruiter will update the upper and lower price of the freelancer
         """
         action = np.asarray(action)
+        # for i in range(self.n_agents_recruiters):
+        #     if action[i] == 1:
+        #         self.application_status[agent_id, i] = 1
+        #         self.applied_status[agent_id, i] = 1
+        #     else:
+        #         self.application_status[agent_id, i] = 0
         for i in range(self.n_agents_recruiters):
-            if action[i] == 1:
-                self.application_status[agent_id, i] = 1
-                self.applied_status[agent_id, i] = 1
-            else:
-                self.application_status[agent_id, i] = 0
+           self.application_status[agent_id, i] = 1
+           self.applied_status[agent_id, i] = 1
+        self.new_actions[agent_id] = action
         if is_last:
             self.last_obs = self.observe_list()
             self.step_count += 1
@@ -652,6 +666,7 @@ class Jobmatching_step2():
         self.rate_recruiter = rate_recruiter
         self.base_price = base_price
         self.num_of_skills = num_of_skills
+        self.new_actions = dict()
         
         self.action_space = [agent.action_space for agent in self.agents]        
         self.observation_space = [agent.observation_space for agent in self.agents]
@@ -703,7 +718,9 @@ class Jobmatching_step2():
                 recruiter_rate = self.rate_recruiter[i]
                 offer_status = self.offer_status[idx].ravel()
                 employment_status = self.employment_status[idx].ravel()
-                obs_i.append(np.concatenate((np.array([num_of_skills, pay_low, pay_high, freelancer_rate, recruiter_rate]), offer_status, employment_status)))
+                base_price = self.base_price[idx]
+                budget = self.budget[i]
+                obs_i.append(np.concatenate((np.array([base_price, num_of_skills, pay_low, pay_high, budget, freelancer_rate, recruiter_rate]), offer_status, employment_status)))
             obs_i = np.array(obs_i).flatten()
             obs_list_1.append(obs_i)
         return obs_list_1
@@ -728,37 +745,150 @@ class Jobmatching_step2():
         1. Update offer status in the environment
         2. The freelancer will update the past offer price of the recruiter
         """
+
         action = np.asarray(action)
-        nonzeros = np.count_nonzero(self.application_status[:, agent_id])
-        employed = np.count_nonzero(self.employment_status[:, agent_id])
-        budget = self.budget[agent_id]
-        if nonzeros <= budget - employed:
+
+        '''
+        if bg - employed >= nonzeros:
             for i in range(self.n_agents_freelancers):
                 if self.application_status[i, agent_id] == 1:
                     self.offer_status[i, agent_id] = 1
                     self.past_offer_price[i, agent_id] = action[i]
+                    new_action[i] = action[i]
                 else:
                     self.offer_status[i, agent_id] = 0
-                    self.past_offer_price[i, agent_id] = 0
+                    self.past_offer_price[i, agent_id] = self.pay_low[i]
+                    new_action[i] = self.pay_low[i]
         else:
-            # choose the top budget - employed freelancers with the highest offer price
+            # sort the action
             candidate_prices = []
             for i in range(self.n_agents_freelancers):
                 if self.application_status[i, agent_id] == 1:
                     candidate_prices.append(action[i])
                 else:
-                    candidate_prices.append(0)
+                    candidate_prices.append(self.pay_low[i])
             candidate_prices = np.array(candidate_prices)
-            k = int(-budget + employed)
-            # print(k)
-            price = np.partition(candidate_prices, k)[k]
+            k = int(-bg + employed)
+            if k == 0:
+                for i in range(self.n_agents_freelancers):
+                    if self.employment_status[i, agent_id] == 1:
+                        self.offer_status[i, agent_id] = 1
+                        self.past_offer_price[i, agent_id] = action[i]
+                        new_action[i] = action[i]
+                    else:
+                        self.offer_status[i, agent_id] = 0
+                        self.past_offer_price[i, agent_id] = self.pay_low[i]
+                        new_action[i] = self.pay_low[i]
+            else:
+                price = np.partition(candidate_prices, k)[k]
+                for i in range(self.n_agents_freelancers):
+                    if action[i] >= price and self.application_status[i, agent_id] == 1:
+                        self.offer_status[i, agent_id] = 1
+                        self.past_offer_price[i, agent_id] = action[i]
+                        new_action[i] = action[i]
+                    else:
+                        self.offer_status[i, agent_id] = 0
+                        self.past_offer_price[i, agent_id] = self.pay_low[i]
+                        new_action[i] = self.pay_low[i]
+        '''
+        bg = self.budget[agent_id]
+        new_action = np.zeros(self.n_agents_freelancers)
+
+        total_employed_cost = 0
+        for i in range(self.n_agents_freelancers):
+            if self.application_status[i, agent_id] == 1:
+                total_employed_cost += action[i]
+
+        if bg >= total_employed_cost:
             for i in range(self.n_agents_freelancers):
-                if action[i] >= price and self.application_status[i, agent_id] == 1:
+                if self.application_status[i, agent_id] == 1:
                     self.offer_status[i, agent_id] = 1
                     self.past_offer_price[i, agent_id] = action[i]
+                    new_action[i] = action[i]
                 else:
                     self.offer_status[i, agent_id] = 0
                     self.past_offer_price[i, agent_id] = 0
+                    new_action[i] = 0
+        else:
+            for i in range(self.n_agents_freelancers):
+                self.offer_status[i, agent_id] = 0
+                self.past_offer_price[i, agent_id] = 0
+            # sort the action
+            total_employed_cost = 0
+            budget_left = bg
+            sorted_action = np.flip(np.sort(action))
+            # print("sorted_action: ", sorted_action)
+            for act in sorted_action:
+                if budget_left == 0:
+                    break
+                if act > budget_left:
+                    for i in range(self.n_agents_freelancers):
+                        if act == action[i] and budget_left > 0:
+                            self.offer_status[i, agent_id] = 1
+                            self.past_offer_price[i, agent_id] = budget_left
+                            new_action[i] = budget_left
+                            budget_left = 0
+                    break
+                else:
+                    for i in range(self.n_agents_freelancers):
+                        if act == action[i] and budget_left >= act:
+                            self.offer_status[i, agent_id] = 1
+                            self.past_offer_price[i, agent_id] = act
+                            new_action[i] = act
+                            budget_left -= act
+                        elif act == action[i] and budget_left < act:
+                            self.off_status[i, agent_id] = 1
+                            self.past_offer_price[i, agent_id] = budget_left
+                            new_action[i] = budget_left
+                            budget_left = 0
+        
+        self.new_actions[agent_id] = new_action
+
+
+        # print("action: ", action)
+        # print("new action: ", new_action)
+        # print("budget: ", budget)
+        # assert 0
+
+        # if budget == employed:
+        #     for i in range(self.n_agents_freelancers):
+        #         if self.application_status[i, agent_id] == 1:
+        #             self.past_offer_price[i, agent_id] = action[i]
+        # else:
+        #     for i in range(self.n_agents_freelancers):
+        #         self.offer_status[i, agent_id] = 0
+        #         self.past_offer_price[i, agent_id] = 0
+        #     if nonzeros <= budget - employed:
+        #         for i in range(self.n_agents_freelancers):
+        #             if self.application_status[i, agent_id] == 1:
+        #                 self.offer_status[i, agent_id] = 1
+        #                 self.past_offer_price[i, agent_id] = action[i]
+        #             else:
+        #                 self.offer_status[i, agent_id] = 0
+        #                 self.past_offer_price[i, agent_id] = 0
+        #     else:
+        #         # choose the top budget - employed freelancers with the highest offer price
+        #         candidate_prices = []
+        #         for i in range(self.n_agents_freelancers):
+        #             if self.application_status[i, agent_id] == 1:
+        #                 candidate_prices.append(action[i])
+        #             else:
+        #                 candidate_prices.append(0)
+        #         candidate_prices = np.array(candidate_prices)
+        #         k = int(-budget + employed)
+        #         # print(k)
+        #         price = np.partition(candidate_prices, k)[k]
+        #         for i in range(self.n_agents_freelancers):
+        #             if action[i] >= price and self.application_status[i, agent_id] == 1:
+        #                 self.offer_status[i, agent_id] = 1
+        #                 self.past_offer_price[i, agent_id] = action[i]
+        #             else:
+        #                 self.offer_status[i, agent_id] = 0
+        #                 self.past_offer_price[i, agent_id] = 0
+
+        # print("offer status: {}".format(self.offer_status))
+        # print("offer price: {}".format(self.past_offer_price))
+
         if is_last:
             self.last_obs = self.observe_list()
             self.step_count += 1
@@ -788,12 +918,14 @@ class Jobmatching_step3():
         self.seed()
         self.agents = [Freelancer_3(idx + 1, rate_freelancer[idx], pay_low[idx], pay_high[idx], num_of_skills[idx], self.n_agents_recruiters, self.n_agents_freelancers) for idx in range(self.n_agents_freelancers)]
         
+        self.num_of_skills = num_of_skills
         self.budget = budget
         self.pay_low = pay_low
         self.pay_high = pay_high
         self.rate_freelancer = rate_freelancer
         self.rate_recruiter = rate_recruiter
         self.base_price = base_price
+        self.new_actions = dict()
         
         self.u_ij = np.array(u_ij)
         self.v_ij = np.array(v_ij)
@@ -841,10 +973,16 @@ class Jobmatching_step3():
                 rate_freelancer = self.rate_freelancer[i]
                 rate_recruiter = self.rate_recruiter[idx]
                 if self.offer_status[i, idx] == 1:
+                    num_of_skills = self.num_of_skills[idx]
+                    pay_low = self.pay_low[idx]
+                    pay_high = self.pay_high[idx]
                     past_offer_price = self.past_offer_price[i, idx]
                 else:
+                    num_of_skills = 0
+                    pay_low = 0
+                    pay_high = 0
                     past_offer_price = 0
-                obs_i.append(np.concatenate((np.array([budget, base_price, past_offer_price, rate_freelancer, rate_recruiter]), self.offer_status[:, idx].ravel(), self.employment_status[:, idx].ravel())))
+                obs_i.append(np.concatenate((np.array([base_price, num_of_skills, pay_low, pay_high, past_offer_price, rate_freelancer, rate_recruiter]), self.offer_status[:, idx].ravel(), self.employment_status[:, idx].ravel())))
             obs_i = np.array(obs_i).flatten()
             obs_list.append(obs_i)
         return obs_list
@@ -881,7 +1019,7 @@ class Jobmatching_step3():
             if employed_freelancers[i] == 0:
                 rewards_freelancer[i] = -NOT_HIRED_PENALTY
         for j in range(self.n_agents_recruiters):
-            rewards_recruiter[j] -= (self.budget[j] - employer_num[j]) * NOT_HIRED_PENALTY
+            rewards_recruiter[j] -= int(self.budget[j]/DEFAULT_BASE_PRICE - employer_num[j]) * NOT_HIRED_PENALTY
         return rewards_freelancer, rewards_recruiter
 
     def step(self, action, agent_id, is_last):
@@ -891,8 +1029,13 @@ class Jobmatching_step3():
         # nonzero offer and have applied
         for i in range(self.n_agents_recruiters):
             self.employment_status[agent_id, i] = 0
-        if self.application_status[agent_id, action] == 1:
+        if action == self.n_agents_recruiters:
+            self.new_actions[agent_id] = self.n_agents_recruiters
+        elif self.application_status[agent_id, action] == 1 and self.offer_status[agent_id, action] == 1:
             self.employment_status[agent_id, action] = 1
+            self.new_actions[agent_id] = action
+        else:
+            self.new_actions[agent_id] = self.n_agents_recruiters
 
         if is_last:
             # update rewards
@@ -908,6 +1051,8 @@ class Jobmatching_step3():
             last_rewards_recruiter = local_rewards_recruiter * self.local_ratio + global_rewards_recruiter * (1 - self.local_ratio)
             self.last_rewards = last_rewards_freelancer
             self.last_recruiter_rewards = last_rewards_recruiter
+            # print("self last rewards freelancer", self.last_rewards)
+            # print("self last rewards recruiter", self.last_recruiter_rewards)
             self.step_count += 1
 
     def observe(self, agent):
@@ -925,3 +1070,77 @@ class Jobmatching_step3():
     
     def output_rewards(self):
         return self.last_rewards, self.last_recruiter_rewards # freelancers, recruiters
+
+class ToyAgent(Agent):
+    def __init__(self, idx, n_agent_recruiters):
+        self.idx = idx
+        self.n_agent_recruiters = n_agent_recruiters
+
+    def observation_space(self):
+        returm spaces.Discrete(self.n_agent_recruiters + 1)
+
+    def action_space(self):
+        return spaces.Discrete(self.n_agent_recruiters)
+
+class ToyExample():
+    def __init__(self, base_price, n_agents_recruiters, **kwargs):
+        self.n_agents_recruiters = n_agents_recruiters
+        self.seed()
+        self.base_price = base_price
+
+        self.num_employees = np.zeros(self.n_agents_recruiters)
+        self.previous_employer = np.array([-1 for _ in range(self.n_agents_recruiters)])
+
+        self.agents = [ToyAgent(i, self.n_agents_recruiters) for i in range(self.n_agents_recruiters)]
+
+        self.action_space = [agent.action_space for agent in self.agents]        
+        self.observation_space = [agent.observation_space for agent in self.agents]
+        
+        self.last_rewards = [np.float64(0) for _ in range(self.n_agents_freelancers)]
+        self.last_dones = [False for _ in range(self.n_agents_freelancers)]
+        self.last_obs = [None for _ in range(self.n_agents_freelancers)]
+
+        self.step_count = 0
+        self.reset()
+
+    def observe_list(self):
+        obs_list = []
+        for i in range(self.n_agents_recruiters):
+            obs_list.append(self.num_employees[i])
+        return obs_list
+
+    def reset(self):
+        self.num_employees = np.zeros(self.n_agents_recruiters)
+        self.previous_employer = np.array([-1 for _ in range(self.n_agents_recruiters)])
+        self.last_obs = self.observe_list()
+        self.last_rewards = [np.float64(0) for _ in range(self.n_agents_freelancers)]
+        self.last_dones = [False for _ in range(self.n_agents_freelancers)]
+        self.last_obs = self.observe_list()
+        return self.last_obs[0]
+
+    def rewards_handler(self):
+        rewards = np.zeros(self.n_agents_recruiters)
+        for i in range(self.n_agents_recruiters):
+            rewards[i] = self.base_price[self.previous_employer[i]]
+        return rewards
+
+    def step(self, action, agent_id, is_last):
+        if self.previous_employer[agent_id] != -1:
+            self.num_employees[self.previous_employer[agent_id]] -= 1
+            self.num_employees[action] += 1
+            self.previous_employer[agent_id] = action
+        else:
+            self.num_employees[action] += 1
+            self.previous_employer[agent_id] = action
+
+        if is_last:
+            self.last_obs = self.observe_list()
+            rewards = self.rewards_handler()
+            local_rewards = rewards
+            global_rewards = local_rewards.mean()
+            last_rewards = local_rewards * self.local_ratio + global_rewards * (1 - self.local_ratio)
+            self.last_rewards = last_rewards
+            self.step_count += 1
+
+    def observe(self, agent):
+        return np.array(self.last_obs[agent], dtype=np.float32)
