@@ -457,6 +457,16 @@ def get_parameters(n_freelancers, n_recruiters, exp_no):
         num_of_skills = np.array([1, 2, 3])
         u_ij = np.array([[8, 8, 8], [13, 13, 13], [18, 18, 18]])
         v_ij = np.array([[8, 8, 8], [11, 11, 11], [14, 14, 14]])
+    elif exp_no == 1:
+        budget = None
+        base_price = np.arange(8,18)
+        low_price = None
+        high_price = None
+        rate_freelancer = None
+        rate_recruiter = None
+        num_of_skills = None
+        u_ij = None
+        v_ij = None
     else:
         return NotImplementedError
     return budget, base_price, low_price, high_price, rate_freelancer, rate_recruiter, num_of_skills, u_ij, v_ij

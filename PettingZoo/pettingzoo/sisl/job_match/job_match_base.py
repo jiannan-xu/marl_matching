@@ -1077,21 +1077,22 @@ class ToyAgent(Agent):
         self.n_agent_recruiters = n_agent_recruiters
 
     def observation_space(self):
-        returm spaces.Discrete(self.n_agent_recruiters + 1)
+        return spaces.Discrete(self.n_agent_recruiters + 1)
 
     def action_space(self):
         return spaces.Discrete(self.n_agent_recruiters)
 
 class ToyExample():
-    def __init__(self, base_price, n_agents_recruiters, **kwargs):
+    def __init__(self, base_price, n_agents_freelancers, n_agents_recruiters, **kwargs):
+        self.n_agents_freelancers = n_agents_freelancers
         self.n_agents_recruiters = n_agents_recruiters
         self.seed()
         self.base_price = base_price
 
         self.num_employees = np.zeros(self.n_agents_recruiters)
-        self.previous_employer = np.array([-1 for _ in range(self.n_agents_recruiters)])
+        self.previous_employer = np.array([-1 for _ in range(self.n_agents_freelancers)])
 
-        self.agents = [ToyAgent(i, self.n_agents_recruiters) for i in range(self.n_agents_recruiters)]
+        self.agents = [ToyAgent(i, self.n_agents_recruiters) for i in range(self.n_agents_freelancers)]
 
         self.action_space = [agent.action_space for agent in self.agents]        
         self.observation_space = [agent.observation_space for agent in self.agents]
@@ -1105,14 +1106,13 @@ class ToyExample():
 
     def observe_list(self):
         obs_list = []
-        for i in range(self.n_agents_recruiters):
+        for i in range(self.n_agents_freelancers):
             obs_list.append(self.num_employees[i])
         return obs_list
 
     def reset(self):
         self.num_employees = np.zeros(self.n_agents_recruiters)
-        self.previous_employer = np.array([-1 for _ in range(self.n_agents_recruiters)])
-        self.last_obs = self.observe_list()
+        self.previous_employer = np.array([-1 for _ in range(self.n_agents_freelancers)])
         self.last_rewards = [np.float64(0) for _ in range(self.n_agents_freelancers)]
         self.last_dones = [False for _ in range(self.n_agents_freelancers)]
         self.last_obs = self.observe_list()

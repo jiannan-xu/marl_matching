@@ -1,0 +1,1 @@
+python ppo_toy.py --epochs 1000 --obs-normalize --no-cuda
