@@ -352,8 +352,6 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         env_2.aec_env.env.update_env_1(app_status)
         env_3.aec_env.env.update_env_1(app_status)
 
-        # print('new_good_action_1', new_good_actions_1)
-
         # print('app_status', app_status)
         logger_file.write('app_status {}\n'.format(app_status))
         
@@ -361,7 +359,7 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
             a, v2, logp = ac_2.step(torch.from_numpy(o2[agent]).\
                             to(Param.device).type(Param.dtype), train=obs_normalize)
             # print('2', agent, a, v2, logp)
-            logger_file.write('2 {} {} {} {}\n'.format(agent, a, v1, logp))
+            logger_file.write('2 {} {} {} {}\n'.format(agent, a, v2, logp))
             values_2[agent] = v2
             log_probs_2[agent] = logp
             a = a.cpu().numpy()
@@ -384,7 +382,7 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         for agent in freelancers:
             a, v3, logp = ac_3.step(torch.from_numpy(o3[agent]).\
                             to(Param.device).type(Param.dtype), train=obs_normalize)
-            logger_file.write('3 {} {} {} {}\n'.format(agent, a, v1, logp))
+            logger_file.write('3 {} {} {} {}\n'.format(agent, a, v3, logp))
             # print('3', agent, a, v3, logp)
             values_3[agent] = v3
             log_probs_3[agent] = logp
