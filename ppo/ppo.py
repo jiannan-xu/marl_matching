@@ -101,8 +101,8 @@ class PPOBuffer:
         assert self.ptr == self.max_size    # buffer has to be full before you can get
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(self.adv_buf, 0), np.std(self.adv_buf, 0)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+        # adv_mean, adv_std = np.mean(self.adv_buf, 0), np.std(self.adv_buf, 0)
+        # self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         data = dict(obs=from_numpy(self.obs_buf), act=from_numpy(self.act_buf), ret=from_numpy(self.ret_buf),
                     adv=from_numpy(self.adv_buf), logp=self.logp_buf)
         return data
@@ -124,7 +124,7 @@ def make_jobmatch_env(**kwargs):
     return env_1, env_2, env_3, recruiters, freelancers
                
 def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
+        steps_per_epoch=1, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
         target_kl=0.01, save_freq=10, epoch_smoothed=10,
         no_save=False, verbose=False, log_freq=50, trained_dir=None, 
@@ -330,184 +330,150 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
             ac_2.initialize()
             ac_3.initialize()
             
-        for t in range(steps_per_epoch):
-            good_actions_1, values_1, log_probs_1 = {},{},{}
-            good_actions_2, values_2, log_probs_2 = {},{},{}
-            good_actions_3, values_3, log_probs_3 = {},{},{}
-            
-            for agent in freelancers:
-                a, v1, logp = ac_1.step(torch.from_numpy(o1[agent]).\
-                                to(Param.device).type(Param.dtype), train=obs_normalize)
-                # print('1', agent, a, v1, logp)
-                logger_file.write('1 {} {} {} {}\n'.format(agent, a, v1, logp))
-                values_1[agent] = v1
-                log_probs_1[agent] = torch.mean(logp)
-                a = a.cpu().numpy()
-                good_actions_1[agent] = a
-            # reward_1 is empty
-            next_o1, reward_1, done_1, infos_1, new_good_actions_1 = env_1.step(good_actions_1)
-            
-            app_status = env_1.aec_env.env.output_for_update_env()
-            env_2.aec_env.env.update_env_1(app_status)
-            env_3.aec_env.env.update_env_1(app_status)
+        
+        good_actions_1, values_1, log_probs_1 = {},{},{}
+        good_actions_2, values_2, log_probs_2 = {},{},{}
+        good_actions_3, values_3, log_probs_3 = {},{},{}
+        
+        for agent in freelancers:
+            a, v1, logp = ac_1.step(torch.from_numpy(o1[agent]).\
+                            to(Param.device).type(Param.dtype), train=obs_normalize)
+            # print('1', agent, a, v1, logp)
+            logger_file.write('1 {} {} {} {}\n'.format(agent, a, v1, logp))
+            values_1[agent] = v1
+            log_probs_1[agent] = torch.mean(logp)
+            a = a.cpu().numpy()
+            good_actions_1[agent] = a
+        # reward_1 is empty
+        # print('good_actions_1', good_actions_1)
+        next_o1, reward_1, done_1, infos_1, new_good_actions_1 = env_1.step(good_actions_1)
+        
+        app_status = env_1.aec_env.env.output_for_update_env()
+        env_2.aec_env.env.update_env_1(app_status)
+        env_3.aec_env.env.update_env_1(app_status)
 
-            # print('new_good_action_1', new_good_actions_1)
+        # print('new_good_action_1', new_good_actions_1)
 
-            # print('app_status', app_status)
-            logger_file.write('app_status {}\n'.format(app_status))
+        # print('app_status', app_status)
+        logger_file.write('app_status {}\n'.format(app_status))
+        
+        for agent in recruiters:
+            a, v2, logp = ac_2.step(torch.from_numpy(o2[agent]).\
+                            to(Param.device).type(Param.dtype), train=obs_normalize)
+            # print('2', agent, a, v2, logp)
+            logger_file.write('2 {} {} {} {}\n'.format(agent, a, v1, logp))
+            values_2[agent] = v2
+            log_probs_2[agent] = logp
+            a = a.cpu().numpy()
+            good_actions_2[agent] = a
             
-            for agent in recruiters:
-                a, v2, logp = ac_2.step(torch.from_numpy(o2[agent]).\
-                                to(Param.device).type(Param.dtype), train=obs_normalize)
-                # print('2', agent, a, v2, logp)
-                logger_file.write('2 {} {} {} {}\n'.format(agent, a, v1, logp))
-                values_2[agent] = v2
-                log_probs_2[agent] = logp
-                a = a.cpu().numpy()
-                good_actions_2[agent] = a
+        # print('good_actions_2', good_actions_2)
+        next_o2, reward_2, done_2, infos_2, new_good_actions_2 = env_2.step(good_actions_2)
+
+        # print('new_good_action_2', new_good_actions_2)
+
+        off_status, pri_status = env_2.aec_env.env.output_for_update_env()
+        env_1.aec_env.env.update_env_2(off_status, pri_status)
+        env_3.aec_env.env.update_env_2(off_status, pri_status)
+
+        # print('off_status', off_status)
+        logger_file.write('off_status {}\n'.format(off_status))
+        # print('pri_status', pri_status)
+        logger_file.write('pri_status {}\n'.format(pri_status))
+
+        for agent in freelancers:
+            a, v3, logp = ac_3.step(torch.from_numpy(o3[agent]).\
+                            to(Param.device).type(Param.dtype), train=obs_normalize)
+            logger_file.write('3 {} {} {} {}\n'.format(agent, a, v1, logp))
+            # print('3', agent, a, v3, logp)
+            values_3[agent] = v3
+            log_probs_3[agent] = logp
+            a = a.item()
+            good_actions_3[agent] = a
+            
+        next_o3, reward_3, done_3, infos_3, new_good_actions_3 = env_3.step(good_actions_3)
+        emp_status = env_3.aec_env.env.output_for_update_env()
+
+        # print('new_good_action_3', new_good_actions_3)
+
+        # print('emp_status', emp_status)
+        logger_file.write('emp_status {}\n'.format(emp_status))
+
+        env_1.aec_env.env.update_env_3(emp_status)
+        env_2.aec_env.env.update_env_3(emp_status)
+        _, r2 = env_3.aec_env.env.output_rewards()
+        for i in range(len(recruiters)):
+            reward_2[recruiters[i]] = r2[i]
+        reward_1 = reward_3
+
+        print('reward_1', reward_1)
+        print('reward_2', reward_2)
+        logger_file.write('reward_1 {}\n'.format(reward_1))
+        logger_file.write('reward_2 {}\n'.format(reward_2))
+        
+        # assert 0
+        
+        
+
+        for i in range(len(freelancers)):
+            agent = freelancers[i]
+            if freelancers[i] in env_1.agents:
+                good_total_rewards_1[i] += reward_1[agent]
+            if done_1[agent]:
+                terminal = True
+            # print(o1[agent])
+            # print(good_actions_1[agent])
+            # print(reward_1[agent])
+            # print(values_1[agent])
+            # print(log_probs_1[agent])
+            bufs_1[agent].store(o1[agent], good_actions_1[agent],
+                                reward_1[agent], values_1[agent], log_probs_1[agent])
+            
+        for i in range(len(recruiters)):
+            agent = recruiters[i]
+            if recruiters[i] in env_2.agents:
+                good_total_rewards_2[i] += reward_2[agent]
+            if done_2[agent]:
+                terminal = True
+            bufs_2[agent].store(o2[agent], good_actions_2[agent],
+                                reward_2[agent], values_2[agent], log_probs_2[agent])
+            
+        for i in range(len(freelancers)):
+            agent = freelancers[i]
+            if freelancers[i] in env_3.agents:
+                good_total_rewards_3[i] += reward_3[agent]
+            if done_3[agent]:
+                terminal = True
+            bufs_3[agent].store(o3[agent], good_actions_3[agent],
+                                reward_3[agent], values_3[agent], log_probs_3[agent])
+        
+        for agent in freelancers:
+            _, v1, _ = ac_1.step(torch.from_numpy(o1[agent]).to(Param.device).type(Param.dtype), 
+                                train=obs_normalize)
+            bufs_1[agent].finish_path(v1.item())
+        for agent in recruiters:
+            _, v2, _ = ac_2.step(torch.from_numpy(o2[agent]).to(Param.device).type(Param.dtype), 
+                                train=obs_normalize)
+            bufs_2[agent].finish_path(v2.item())
+        for agent in freelancers:
+            _, v3, _ = ac_3.step(torch.from_numpy(o3[agent]).to(Param.device).type(Param.dtype), 
+                                train=obs_normalize)
+            bufs_3[agent].finish_path(v3.item())
+            
                 
-            next_o2, reward_2, done_2, infos_2, new_good_actions_2 = env_2.step(good_actions_2)
-
-            # print('new_good_action_2', new_good_actions_2)
-
-            off_status, pri_status = env_2.aec_env.env.output_for_update_env()
-            env_1.aec_env.env.update_env_2(off_status, pri_status)
-            env_3.aec_env.env.update_env_2(off_status, pri_status)
-
-            # print('off_status', off_status)
-            logger_file.write('off_status {}\n'.format(off_status))
-            # print('pri_status', pri_status)
-            logger_file.write('pri_status {}\n'.format(pri_status))
-
-            for agent in freelancers:
-                a, v3, logp = ac_3.step(torch.from_numpy(o3[agent]).\
-                                to(Param.device).type(Param.dtype), train=obs_normalize)
-                logger_file.write('3 {} {} {} {}\n'.format(agent, a, v1, logp))
-                # print('3', agent, a, v3, logp)
-                values_3[agent] = v3
-                log_probs_3[agent] = logp
-                a = a.item()
-                good_actions_3[agent] = a
-                
-            next_o3, reward_3, done_3, infos_3, new_good_actions_3 = env_3.step(good_actions_3)
-            emp_status = env_3.aec_env.env.output_for_update_env()
-
-            # print('new_good_action_3', new_good_actions_3)
-
-            # print('emp_status', emp_status)
-            logger_file.write('emp_status {}\n'.format(emp_status))
-
-            env_1.aec_env.env.update_env_3(emp_status)
-            env_2.aec_env.env.update_env_3(emp_status)
-            _, r2 = env_3.aec_env.env.output_rewards()
-            for i in range(len(recruiters)):
-                reward_2[recruiters[i]] = r2[i]
-            reward_1 = reward_3
-
-            # print('reward_1', reward_1)
-            # print('reward_2', reward_2)
-            logger_file.write('reward_1 {}\n'.format(reward_1))
-            logger_file.write('reward_2 {}\n'.format(reward_2))
-            
-            # assert 0
-            
-            
-
-            for i in range(len(freelancers)):
-                agent = freelancers[i]
-                if freelancers[i] in env_1.agents:
-                    good_total_rewards_1[i] += reward_1[agent]
-                if done_1[agent]:
-                    terminal = True
-                # print(o1[agent])
-                # print(good_actions_1[agent])
-                # print(reward_1[agent])
-                # print(values_1[agent])
-                # print(log_probs_1[agent])
-                bufs_1[agent].store(o1[agent], good_actions_1[agent],
-                                    reward_1[agent], values_1[agent], log_probs_1[agent])
-                
-            for i in range(len(recruiters)):
-                agent = recruiters[i]
-                if recruiters[i] in env_2.agents:
-                    good_total_rewards_2[i] += reward_2[agent]
-                if done_2[agent]:
-                    terminal = True
-                bufs_2[agent].store(o2[agent], good_actions_2[agent],
-                                    reward_2[agent], values_2[agent], log_probs_2[agent])
-                
-            for i in range(len(freelancers)):
-                agent = freelancers[i]
-                if freelancers[i] in env_3.agents:
-                    good_total_rewards_3[i] += reward_3[agent]
-                if done_3[agent]:
-                    terminal = True
-                bufs_3[agent].store(o3[agent], good_actions_3[agent],
-                                   reward_3[agent], values_3[agent], log_probs_3[agent])
-            
-
-            ep_len += 1
-            # Update obs (critical!)
-            o1 = next_o1
-            o2 = next_o2
-            o3 = next_o3
-            
-            timeout = (ep_len == max_ep_len)
-            terminal = (terminal or timeout)
-            epoch_ended = (t== steps_per_epoch-1)
-
-            if terminal or epoch_ended:
-                if epoch_ended and not(terminal) and not(verbose):
-                    print('Warning: trajectory cut off by epoch at %d steps.'%ep_len, flush=True)
-                # if trajectory didn't reach terminal state, bootstrap value target
-                for agent in freelancers:
-                    if timeout or epoch_ended:
-                        _, v1, _ = ac_1.step(torch.from_numpy(o1[agent]).to(Param.device).type(Param.dtype), 
-                                          train=obs_normalize)
-                    else:
-                        v1 = torch.tensor(0)
-                    bufs_1[agent].finish_path(v1.item())
-                for agent in recruiters:
-                    if timeout or epoch_ended:
-                        _, v2, _ = ac_2.step(torch.from_numpy(o2[agent]).to(Param.device).type(Param.dtype), 
-                                          train=obs_normalize)
-                    else:
-                        v2 = torch.tensor(0)
-                    bufs_2[agent].finish_path(v2.item())
-                for agent in freelancers:
-                    if timeout or epoch_ended:
-                        _, v3, _ = ac_3.step(torch.from_numpy(o3[agent]).to(Param.device).type(Param.dtype), 
-                                          train=obs_normalize)
-                    else:
-                        v3 = torch.tensor(0)
-                    bufs_3[agent].finish_path(v3.item())
-                
-                if terminal:
-                    terminal = False
-                    
-                    ep_ret_1 = good_total_rewards_1[0]
-                    good_total_rewards_1 = np.zeros(len(good_total_rewards_1))
-                    ep_ret_2 = good_total_rewards_2[0]
-                    good_total_rewards_2 = np.zeros(len(good_total_rewards_2))
-                    ep_ret_3 = good_total_rewards_3[0]
-                    good_total_rewards_3 = np.zeros(len(good_total_rewards_3))
-                    
-                    avg_return_1.append(ep_ret_1)
-                    avg_len_1.append(ep_len)
-                    avg_return_2.append(ep_ret_2)
-                    avg_len_2.append(ep_len)
-                    avg_return_3.append(ep_ret_3)
-                    avg_len_3.append(ep_len)
-                    
-                o1 = env_1.reset()
-                o2 = env_2.reset()
-                o3 = env_3.reset()
-                ### Initialize hidden states for reucrrent network
-                if recurrent:
-                    ac_1.initialize()
-                    ac_2.initialize()
-                    ac_3.initialize()
-                ep_len = 0
+        ep_ret_1 = good_total_rewards_1.mean()
+        good_total_rewards_1 = np.zeros(len(good_total_rewards_1))
+        ep_ret_2 = good_total_rewards_2.mean()
+        good_total_rewards_2 = np.zeros(len(good_total_rewards_2))
+        ep_ret_3 = good_total_rewards_3.mean()
+        good_total_rewards_3 = np.zeros(len(good_total_rewards_3))
+        
+        avg_return_1.append(ep_ret_1)
+        avg_len_1.append(ep_len)
+        avg_return_2.append(ep_ret_2)
+        avg_len_2.append(ep_len)
+        avg_return_3.append(ep_ret_3)
+        avg_len_3.append(ep_len)
         
         
         # Perform PPO update!
@@ -556,34 +522,40 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         epoch_return_3.append(sum(avg_return_3)/len(avg_return_3))
             
         print("----------------------Epoch {}----------------------------".format(epoch))
-        logger_file.write("----------------------Epoch {}----------------------------\n".format(epoch))
-        print("EpRet:{}".format(sum(avg_return_1)/len(avg_return_1)))
-        logger_file.write("EpRet:{}\n".format(sum(avg_return_1)/len(avg_return_1)))
-        print("EpLen:{}".format(sum(avg_len_1)/len(avg_len_1)))
-        logger_file.write("EpLen:{}\n".format(sum(avg_len_1)/len(avg_len_1)))
-        print('V Values:{}'.format(v1))
-        logger_file.write('V Values:{}\n'.format(v1))
-        print('Total Interaction with Environment:{}'.format((epoch+1)*steps_per_epoch))
-        logger_file.write('Total Interaction with Environment:{}\n'.format((epoch+1)*steps_per_epoch))
-        print('LossPi:{}'.format(param_dict_1['LossPi']))
-        logger_file.write('LossPi:{}\n'.format(param_dict_1['LossPi']))
-        print('LossV:{}'.format(param_dict_1['LossV']))
-        logger_file.write('LossV:{}\n'.format(param_dict_1['LossV']))
-        print('DeltaLossPi:{}'.format(param_dict_1['DeltaLossPi']))
-        logger_file.write('DeltaLossPi:{}\n'.format(param_dict_1['DeltaLossPi']))
-        print('DeltaLossV:{}'.format(param_dict_1['DeltaLossV']))
-        logger_file.write('DeltaLossV:{}\n'.format(param_dict_1['DeltaLossV']))
-        print('Entropy:{}'.format(param_dict_1['Entropy']))
-        logger_file.write('Entropy:{}\n'.format(param_dict_1['Entropy']))
-        print('ClipFrac:{}'.format(param_dict_1['ClipFrac']))
-        logger_file.write('ClipFrac:{}\n'.format(param_dict_1['ClipFrac']))
-        print('KL:{}'.format(param_dict_1['KL']))
-        logger_file.write('KL:{}\n'.format(param_dict_1['KL']))
-        print('StopIter:{}'.format(param_dict_1['StopIter']))
-        logger_file.write('StopIter:{}\n'.format(param_dict_1['StopIter']))
-        print('Time:{}'.format(time.time()-start_time))
-        logger_file.write('Time:{}\n'.format(time.time()-start_time))
-        rew_file.write("Episode {}  EpRet:{}\n".format(epoch, sum(avg_return_1)/len(avg_return_1)))
+        print("EpRet-Freelancer:{}".format(sum(avg_return_1)/len(avg_return_1)))
+        print("EpRet-Recruiter:{}".format(sum(avg_return_2)/len(avg_return_2)))
+        print("emp_status:{}\n".format(emp_status))
+        # print("freelancer:{}\n".format(avg_return_1))
+        # print("recruiter:{}\n".format(avg_return_2))
+        logger_file.write("epoch: {}, reward_freelancer: {}, reward_recruiter: {}\n".format(epoch, sum(avg_return_1)/len(avg_return_1), sum(avg_return_2)/len(avg_return_2)))
+        # logger_file.write("----------------------Epoch {}----------------------------\n".format(epoch))
+        # print("EpRet-Recruiter:{}".format(sum(avg_return_1)/len(avg_return_1)))
+        # logger_file.write("EpRet:{}\n".format(sum(avg_return_1)/len(avg_return_1)))
+        # print("EpLen:{}".format(sum(avg_len_1)/len(avg_len_1)))
+        # logger_file.write("EpLen:{}\n".format(sum(avg_len_1)/len(avg_len_1)))
+        # print('V Values:{}'.format(v1))
+        # logger_file.write('V Values:{}\n'.format(v1))
+        # print('Total Interaction with Environment:{}'.format((epoch+1)*steps_per_epoch))
+        # logger_file.write('Total Interaction with Environment:{}\n'.format((epoch+1)*steps_per_epoch))
+        # print('LossPi:{}'.format(param_dict_1['LossPi']))
+        # logger_file.write('LossPi:{}\n'.format(param_dict_1['LossPi']))
+        # print('LossV:{}'.format(param_dict_1['LossV']))
+        # logger_file.write('LossV:{}\n'.format(param_dict_1['LossV']))
+        # print('DeltaLossPi:{}'.format(param_dict_1['DeltaLossPi']))
+        # logger_file.write('DeltaLossPi:{}\n'.format(param_dict_1['DeltaLossPi']))
+        # print('DeltaLossV:{}'.format(param_dict_1['DeltaLossV']))
+        # logger_file.write('DeltaLossV:{}\n'.format(param_dict_1['DeltaLossV']))
+        # print('Entropy:{}'.format(param_dict_1['Entropy']))
+        # logger_file.write('Entropy:{}\n'.format(param_dict_1['Entropy']))
+        # print('ClipFrac:{}'.format(param_dict_1['ClipFrac']))
+        # logger_file.write('ClipFrac:{}\n'.format(param_dict_1['ClipFrac']))
+        # print('KL:{}'.format(param_dict_1['KL']))
+        # logger_file.write('KL:{}\n'.format(param_dict_1['KL']))
+        # print('StopIter:{}'.format(param_dict_1['StopIter']))
+        # logger_file.write('StopIter:{}\n'.format(param_dict_1['StopIter']))
+        # print('Time:{}'.format(time.time()-start_time))
+        # logger_file.write('Time:{}\n'.format(time.time()-start_time))
+        rew_file.write("{} {}\n".format(sum(avg_return_1)/len(avg_return_1), sum(avg_return_2)/len(avg_return_2)))
         rew_file.flush()
         logger_file.flush()
 
@@ -619,8 +591,8 @@ if __name__ == '__main__':
     parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99) # ppo gamma
-    parser.add_argument('--seed', '-s', type=int, default=0) 
-    parser.add_argument('--steps', type=int, default=1000)
+    parser.add_argument('--seed', '-s', type=int, default=3) 
+    parser.add_argument('--steps', type=int, default=1)
     parser.add_argument('--epoch-smoothed', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--log-freq', type=int, default=50)
@@ -641,7 +613,7 @@ if __name__ == '__main__':
     else:
         Param(torch.cuda.FloatTensor, torch.device("cuda:{}".format(args.cuda)))
     
-    budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij = get_parameters(args.n_freelancers, args.n_recruiters, args.exp_no)
+    budget, base_price, pay_low, pay_high, rate_freelancer, rate_recruiter, num_of_skills, u_ij, v_ij = get_parameters(args.n_freelancers, args.n_recruiters, args.exp_no)
     ### Please make sure the following argument names are the same as the FoodCollector's init function
     # def __init__(self, budget, num_of_skills, pay_low, pay_high, 
     #                 rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, 

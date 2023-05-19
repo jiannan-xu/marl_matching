@@ -371,18 +371,18 @@ class raw_env_toy(AECEnv):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.env = _env_toy(*args, **kwargs)
-        self.agents = ["agent_" + str(r) for r in range(self.env.num_agents)]
+        self.agents = ["agent_" + str(r) for r in range(self.env.n_agents_freelancers)]
         self.possible_agents = self.agents[:]
-        self.agent_name_mapping = dict(zip(self.agents, list(range(self.num_agents))))
+        self.agent_name_mapping = dict(zip(self.agents, list(range(self.env.n_agents_freelancers))))
         self._agent_selector = agent_selector(self.agents)
         # spaces
         self.action_spaces = dict(zip(self.agents, self.env.action_space))
         self.observation_spaces = dict(
             zip(self.agents, self.env.observation_space))
-        self.new_actions = dict(zip(self.agents, [None for _ in self.agents]))
+        # self.new_actions = dict(zip(self.agents, [None for _ in self.agents]))
         self.has_reset = False
 
-    def reset():
+    def reset(self):
         self.has_reset = True
         self.env.reset()
         self.agents = self.possible_agents[:]
@@ -400,17 +400,14 @@ class raw_env_toy(AECEnv):
 
         is_last = self._agent_selector.is_last()
         self.env.step(action, self.agent_name_mapping[agent], is_last)
-        self.new_actions[agent] = self.env.new_actions[self.agent_name_mapping[agent]]
+        # self.new_actions[agent] = self.env.new_actions[self.agent_name_mapping[agent]]
         # for r in self.rewards:
         #     self.rewards[r] = self.env.control_rewards[self.agent_name_mapping[r]]
         if is_last:
             for r in self.rewards:
                 self.rewards[r] = self.env.last_rewards[self.agent_name_mapping[r]]
 
-        if self.env.step_count >= self.env.max_cycles:
-            self.dones = dict(zip(self.agents, [True for _ in self.agents]))
-        else:
-            self.dones = dict(zip(self.agents, self.env.last_dones))
+        self.dones = dict(zip(self.agents, self.env.last_dones))
         self._cumulative_rewards[self.agent_selection] = 0
         self.agent_selection = self._agent_selector.next()
         self._accumulate_rewards()

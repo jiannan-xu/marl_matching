@@ -101,8 +101,8 @@ class PPOBuffer:
         assert self.ptr == self.max_size    # buffer has to be full before you can get
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(self.adv_buf, 0), np.std(self.adv_buf, 0)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+        # adv_mean, adv_std = np.mean(self.adv_buf, 0), np.std(self.adv_buf, 0)
+        # self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         data = dict(obs=from_numpy(self.obs_buf), act=from_numpy(self.act_buf), ret=from_numpy(self.ret_buf),
                     adv=from_numpy(self.adv_buf), logp=self.logp_buf)
         return data
@@ -115,7 +115,7 @@ def make_jobmatch_env(**kwargs):
                
 def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=1, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
+        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, 
         target_kl=0.01, save_freq=10, epoch_smoothed=10,
         no_save=False, verbose=False, log_freq=50, trained_dir=None, 
         obs_normalize=False, recurrent=False, data_dir=None
@@ -131,6 +131,8 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Instantiate environment
     env_toy, agents = env_fn()
+    print('observation spaces: {}'.format(env_toy.observation_spaces))
+    print('action spaces: {}'.format(env_toy.action_spaces))
     observation_space = env_toy.observation_spaces[agents[0]]
     action_space = env_toy.action_spaces[agents[0]]
     print('observation space: {}'.format(observation_space))
@@ -147,14 +149,14 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     if trained_dir is not None:
         print("loaded pretrained model from", trained_dir)
         ac_name = os.path.join(trained_dir, "ac.pt")
-        
-        state_dict, mean, std = torch.load(ac_name, map_location=Param.device)
-        ac_1.load_state_dict(state_dict)
-        ac_1.moving_mean = mean
-        ac_1.moving_std = std
-        ac_1.MovingMeanStd.old_m = mean
-        ac_1.MovingMeanStd.old_s = std
-        ac_1.MovingMeanStd.n     = 40000
+        if os.path.exists(ac_name):
+            state_dict, mean, std = torch.load(ac_name, map_location=Param.device)
+            ac_1.load_state_dict(state_dict)
+            ac_1.moving_mean = mean
+            ac_1.moving_std = std
+            ac_1.MovingMeanStd.old_m = mean
+            ac_1.MovingMeanStd.old_s = std
+            ac_1.MovingMeanStd.n     = 40000
     
     # Set up experience buffer
     bufs = {}
@@ -234,7 +236,7 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     
     # Main loop: collect experience in env and update/log each epoch
     for epoch in range(epochs):
-        o1 = env.reset()
+        o1 = env_toy.reset()
         ep_len, terminal = 0, False 
         avg_return, avg_len = [], []
         
@@ -247,19 +249,19 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         for agent in agents:
             a, v1, logp = ac_1.step(torch.from_numpy(o1[agent]).\
                             to(Param.device).type(Param.dtype), train=obs_normalize)
-            # print('1', agent, a, v1, logp)
+            print('1', agent, a, v1, logp)
             # logger_file.write('1 {} {} {} {}\n'.format(agent, a, v1, logp))
             values_1[agent] = v1
             log_probs_1[agent] = torch.mean(logp)
             a = a.cpu().numpy()
             good_actions_1[agent] = a
         # reward_1 is empty
-        next_o1, reward_1, done_1, infos_1 = env.step(good_actions_1)
+        next_o1, reward_1, done_1, infos_1 = env_toy.step(good_actions_1)
         
 
         for i in range(len(agents)):
             agent = agents[i]
-            if agent in env.agents:
+            if agent in env_toy.agents:
                 good_total_rewards[i] += reward_1[agent]
             if done_1[agent]:
                 terminal = True
@@ -330,7 +332,7 @@ def ppo(env_fn=None, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         logger_file.write('StopIter:{}\n'.format(param_dict_1['StopIter']))
         print('Time:{}'.format(time.time()-start_time))
         logger_file.write('Time:{}\n'.format(time.time()-start_time))
-        rew_file.write("Episode {}  EpRet:{}\n".format(epoch, sum(avg_return)/len(avg_return)))
+        rew_file.write("{}\n".format(sum(avg_return)/len(avg_return)))
         rew_file.flush()
         logger_file.flush()
 
@@ -364,7 +366,7 @@ if __name__ == '__main__':
     parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99) # ppo gamma
-    parser.add_argument('--seed', '-s', type=int, default=0) 
+    parser.add_argument('--seed', '-s', type=int, default=1) 
     # parser.add_argument('--steps', type=int, default=1000)
     parser.add_argument('--epoch-smoothed', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=1000)
@@ -374,8 +376,8 @@ if __name__ == '__main__':
     parser.add_argument('--trained-dir', type=str, default="toy_models")
     parser.add_argument('--data-dir', type=str, default="toy_data")
     
-    parser.add_argument('--n-freelancers', type=int, default=10)
-    parser.add_argument('--n-recruiters', type=int, default=10)
+    parser.add_argument('--n-freelancers', type=int, default=100)
+    parser.add_argument('--n-recruiters', type=int, default=100)
     # parser.add_argument('--max-cycle', type=int, default=200)
     parser.add_argument('--recurrent', action="store_true")
     parser.add_argument('--exp-no', type=int, default=1)
@@ -389,14 +391,13 @@ if __name__ == '__main__':
     else:
         Param(torch.cuda.FloatTensor, torch.device("cuda:{}".format(args.cuda)))
     
-    budget, num_of_skills, pay_low, pay_high, rate_freelancer, rate_recruiter, base_price, u_ij, v_ij = get_parameters(args.n_freelancers, args.n_recruiters, args.exp_no)
+    budget, base_price, pay_low, pay_high, rate_freelancer, rate_recruiter, num_of_skills, u_ij, v_ij = get_parameters(args.n_freelancers, args.n_recruiters, args.exp_no)
     ### Please make sure the following argument names are the same as the FoodCollector's init function
     # def __init__(self, budget, num_of_skills, pay_low, pay_high, 
     #                 rate_freelancer, rate_recruiter, base_price, u_ij, v_ij, 
     #                 max_cycles, n_agents_recruiters = 2, 
     #                 n_agents_freelancers = 2, local_ratio = 1, **kwargs):
-    env = make_jobmatch_env(base_price=base_price, u_ij=u_ij, v_ij=v_ij,
-                            max_cycles=args.max_cycle, n_agents_freelancers=args.n_freelancers, n_agents_recruiters=args.n_recruiters)
+    env = make_jobmatch_env(base_price=base_price, n_agents_freelancers=args.n_freelancers, n_agents_recruiters=args.n_recruiters)
     
     if not os.path.exists(args.data_dir):
         os.makedirs(args.data_dir)
@@ -408,9 +409,9 @@ if __name__ == '__main__':
         
     
     ppo(lambda:env, actor_critic=MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, recurrent=args.recurrent, ep_len=args.max_cycle), 
+        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l, recurrent=args.recurrent), 
         gamma=args.gamma, vf_lr=args.vf_lr, pi_lr=args.pi_lr,
-        seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs, max_ep_len=args.max_cycle,
+        seed=args.seed, epochs=args.epochs,
         epoch_smoothed=args.epoch_smoothed,
         no_save = args.no_save, verbose=args.verbose, log_freq = args.log_freq, 
         obs_normalize = args.obs_normalize, 

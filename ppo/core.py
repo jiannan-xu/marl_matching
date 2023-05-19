@@ -446,9 +446,22 @@ def test_return(env_1, env_2, env_3, ac_1, ac_2, ac_3, epochs, max_ep_len,
 def get_parameters(n_freelancers, n_recruiters, exp_no):
     if exp_no == 0:
         # Toy example
-        assert n_freelancers == 3
-        assert n_recruiters == 3
-        budget = np.array([10, 14, 20])
+        # assert n_freelancers == 9
+        # assert n_recruiters == 9
+        # budget = np.arange(10, 10+9)    # 10, 11, ..., 18
+        # base_price = np.arange(8, 8+9)  # 8, 9, ..., 16
+        # low_price = np.arange(6, 6+9)   # 6, 7, ..., 14
+        # high_price = np.arange(10, 10+9)    # 10, 11, ..., 18
+        # rate_freelancer = np.arange(1, 100, 12)     # 1, 13, ..., 97
+        # rate_recruiter = np.arange(1, 100, 12)      # 1, 13, ..., 97
+        # num_of_skills = np.array([1, 1, 1, 2, 2, 2, 3, 3, 3])
+        # u_ij = np.zeros((9, 9))
+        # v_ij = np.zeros((9, 9))
+        # for i in range(9):
+        #     for j in range(9):
+        #         u_ij[i, j] = 13 - (4.5 - i) / 0.8
+        #         v_ij[i, j] = 11 - (4.5 - j) / 1.5
+        budget = np.array([10, 15, 20])
         base_price = np.array([8, 12, 16])
         low_price = np.array([6, 10, 14])
         high_price = np.array([10, 14, 18])
@@ -459,7 +472,7 @@ def get_parameters(n_freelancers, n_recruiters, exp_no):
         v_ij = np.array([[8, 8, 8], [11, 11, 11], [14, 14, 14]])
     elif exp_no == 1:
         budget = None
-        base_price = np.arange(8,18)
+        base_price = np.arange(8,108)
         low_price = None
         high_price = None
         rate_freelancer = None

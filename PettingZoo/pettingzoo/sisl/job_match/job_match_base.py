@@ -13,8 +13,9 @@ import math
 MAX_BASE_PRICE = 20
 MIN_BASE_PRICE = 1
 DEFAULT_BASE_PRICE = 10
-NOT_HIRED_PENALTY = 5
-NOT_ENOUGH_EMPLOYERS_PENALTY = 5
+NOT_HIRED_PENALTY = 7
+NOT_ENOUGH_EMPLOYERS_PENALTY = 7
+HIRED_REWARD = 5
 MAX_NUM_SKILLS = 10
 MIN_NUM_SKILLS = 1
 MAX_RATE = 100
@@ -745,7 +746,7 @@ class Jobmatching_step2():
         1. Update offer status in the environment
         2. The freelancer will update the past offer price of the recruiter
         """
-
+        # print(action)
         action = np.asarray(action)
 
         '''
@@ -945,7 +946,7 @@ class Jobmatching_step3():
         self.last_obs = [None for _ in range(self.n_agents_freelancers)]
         
         self.max_cycles = max_cycles
-        self.local_ratio = local_ratio
+        self.local_ratio = 0.5
         self.step_count = 0
         self.reset()
 
@@ -1008,6 +1009,9 @@ class Jobmatching_step3():
         rewards_recruiter = np.zeros(self.n_agents_recruiters)
         employed_freelancers = np.zeros(self.n_agents_freelancers)
         employer_num = np.zeros(self.n_agents_recruiters)
+        # print("self.employment_status: ", self.employment_status)
+        # print("self.past_offer_price: ", self.past_offer_price)
+
         for i in range(self.n_agents_freelancers):
             for j in range(self.n_agents_recruiters):
                 if self.employment_status[i, j] == 1:
@@ -1015,11 +1019,20 @@ class Jobmatching_step3():
                     employer_num[j] += 1
                     rewards_freelancer[i] = self.past_offer_price[i, j] - self.v_ij[i, j] 
                     rewards_recruiter[j] += self.u_ij[i, j] - self.past_offer_price[i, j]
+        # print("rewards_freelancer: ", rewards_freelancer)
+        # print("rewards_recruiter: ", rewards_recruiter)
         for i in range(self.n_agents_freelancers):
             if employed_freelancers[i] == 0:
                 rewards_freelancer[i] = -NOT_HIRED_PENALTY
+            else:
+                rewards_freelancer[i] += HIRED_REWARD
+        # print("rewards_freelancer: ", rewards_freelancer)
+        # print("rewards_recruiter: ", rewards_recruiter)
         for j in range(self.n_agents_recruiters):
-            rewards_recruiter[j] -= int(self.budget[j]/DEFAULT_BASE_PRICE - employer_num[j]) * NOT_HIRED_PENALTY
+            rewards_recruiter[j] = rewards_recruiter[j] - 1.0 * int(self.budget[j]/DEFAULT_BASE_PRICE - employer_num[j]) * NOT_HIRED_PENALTY
+        # print("rewards_freelancer: ", rewards_freelancer)
+        # print("rewards_recruiter: ", rewards_recruiter)
+        # assert 0
         return rewards_freelancer, rewards_recruiter
 
     def step(self, action, agent_id, is_last):
@@ -1076,9 +1089,11 @@ class ToyAgent(Agent):
         self.idx = idx
         self.n_agent_recruiters = n_agent_recruiters
 
+    @property
     def observation_space(self):
-        return spaces.Discrete(self.n_agent_recruiters + 1)
+        return spaces.Box(low=0, high=self.n_agent_recruiters, shape=(self.n_agent_recruiters, ), dtype=np.int32)
 
+    @property
     def action_space(self):
         return spaces.Discrete(self.n_agent_recruiters)
 
@@ -1104,10 +1119,14 @@ class ToyExample():
         self.step_count = 0
         self.reset()
 
+    def seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
+
     def observe_list(self):
         obs_list = []
         for i in range(self.n_agents_freelancers):
-            obs_list.append(self.num_employees[i])
+            obs_list.append(self.num_employees.copy())
         return obs_list
 
     def reset(self):
@@ -1121,7 +1140,10 @@ class ToyExample():
     def rewards_handler(self):
         rewards = np.zeros(self.n_agents_recruiters)
         for i in range(self.n_agents_recruiters):
-            rewards[i] = self.base_price[self.previous_employer[i]]
+            rewards[i] = np.random.normal(self.base_price[self.previous_employer[i]], 2)
+            
+            
+            
         return rewards
 
     def step(self, action, agent_id, is_last):
@@ -1138,7 +1160,7 @@ class ToyExample():
             rewards = self.rewards_handler()
             local_rewards = rewards
             global_rewards = local_rewards.mean()
-            last_rewards = local_rewards * self.local_ratio + global_rewards * (1 - self.local_ratio)
+            last_rewards = local_rewards # * self.local_ratio + global_rewards * (1 - self.local_ratio)
             self.last_rewards = last_rewards
             self.step_count += 1
 

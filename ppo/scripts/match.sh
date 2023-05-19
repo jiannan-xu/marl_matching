@@ -1,1 +1,1 @@
-python ppo.py --epochs 300 --obs-normalize --cuda 0
+python ppo.py --epochs 2000 --obs-normalize --cuda 0
